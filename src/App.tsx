@@ -1,12 +1,13 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Chess, type Square, type Move } from 'chess.js';
+import { Chess, type Square } from 'chess.js';
 import {
   getBestMove,
-  getHint,
+  getEnhancedHint,
   getValidMoves,
   analyzeGame,
   evaluateBoard,
   type MoveAnalysis,
+  type EnhancedHint,
 } from './engine';
 import { ChessPiece } from './pieces';
 import {
@@ -16,7 +17,10 @@ import {
   generateGameId,
   formatDate,
   formatFullDate,
+  getPlayerStats,
+  updateStatsAfterGame,
   type SavedGame,
+  type PlayerStats,
 } from './storage';
 import Learn from './Learn';
 import './App.css';
@@ -33,7 +37,7 @@ function App() {
   const [playerColor, setPlayerColor] = useState<PlayerColor>('w');
   const [difficulty, setDifficulty] = useState<Difficulty>('medium');
   const [hintsEnabled, setHintsEnabled] = useState(true);
-  const [currentHint, setCurrentHint] = useState<{ move: Move; explanation: string } | null>(null);
+  const [currentHint, setCurrentHint] = useState<EnhancedHint | null>(null);
   const [showHint, setShowHint] = useState(false);
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
   const [analysisData, setAnalysisData] = useState<MoveAnalysis[]>([]);
@@ -46,6 +50,8 @@ function App() {
   const [promotionPending, setPromotionPending] = useState<{ from: Square; to: Square } | null>(null);
   const [currentGameId, setCurrentGameId] = useState<string | null>(null);
   const [savedGames, setSavedGames] = useState<SavedGame[]>([]);
+  const [playerStats, setPlayerStats] = useState<PlayerStats>(getPlayerStats());
+  const [lastEloChange, setLastEloChange] = useState<number | null>(null);
   const [viewingMoveIndex, setViewingMoveIndex] = useState<number | null>(null); // null = live position
   const moveListRef = useRef<HTMLDivElement>(null);
 
@@ -97,7 +103,7 @@ function App() {
   // Update hint when it's the player's turn
   useEffect(() => {
     if (phase === 'playing' && hintsEnabled && game.turn() === playerColor && !game.isGameOver()) {
-      const hint = getHint(game);
+      const hint = getEnhancedHint(game, playerColor);
       setCurrentHint(hint);
     } else {
       setCurrentHint(null);
@@ -165,6 +171,14 @@ function App() {
       saveGame(saved);
       setSavedGames(loadGames());
     }
+
+    // Update ELO
+    let resultType: 'win' | 'loss' | 'draw' = 'draw';
+    if (result.includes('won')) resultType = 'win';
+    else if (result.includes('lost') || result.includes('resigned')) resultType = 'loss';
+    const { stats, eloChange } = updateStatsAfterGame(resultType, difficulty, moveHistory.length);
+    setPlayerStats(stats);
+    setLastEloChange(eloChange);
 
     setGameResult(result);
     setPhase('gameover');
@@ -272,14 +286,13 @@ function App() {
 
   const startAnalysis = () => {
     setIsAnalyzing(true);
-    setTimeout(() => {
-      const pgn = game.pgn();
-      const data = analyzeGame(pgn);
+    const pgn = game.pgn();
+    analyzeGame(pgn).then(data => {
       setAnalysisData(data);
       setAnalysisIndex(0);
       setIsAnalyzing(false);
       setPhase('analysis');
-    }, 100);
+    });
   };
 
   const resign = () => {
@@ -300,6 +313,9 @@ function App() {
       saveGame(saved);
       setSavedGames(loadGames());
     }
+    const { stats, eloChange } = updateStatsAfterGame('loss', difficulty, moveHistory.length);
+    setPlayerStats(stats);
+    setLastEloChange(eloChange);
     setGameResult(result);
     setPhase('gameover');
   };
@@ -317,7 +333,8 @@ function App() {
     const isSelected = !isViewingHistory && selectedSquare === squareName;
     const isValidMove = !isViewingHistory && validMoves.includes(squareName);
     const isLastMoveSquare = !isViewingHistory && lastMove && (lastMove.from === squareName || lastMove.to === squareName);
-    const isHintSquare = !isViewingHistory && showHint && currentHint && (currentHint.move.from === squareName || currentHint.move.to === squareName);
+    const bestHintMove = currentHint?.topMoves[0]?.move;
+    const isHintSquare = !isViewingHistory && showHint && bestHintMove && (bestHintMove.from === squareName || bestHintMove.to === squareName);
     const isCheck = piece && piece.type === 'k' && displayGame.inCheck() && piece.color === displayGame.turn();
 
     let className = `square ${isLight ? 'light' : 'dark'}`;
@@ -440,7 +457,40 @@ function App() {
             </span>
             <h1>Chess Coach</h1>
             <p className="menu-subtitle">Play, learn, and improve your chess</p>
+            <div className="elo-display">
+              <span className="elo-rating">{playerStats.elo}</span>
+              <span className="elo-label">ELO Rating</span>
+            </div>
           </div>
+
+          {playerStats.totalGames > 0 && (
+            <div className="stats-panel">
+              <div className="stat-item">
+                <span className="stat-value">{playerStats.totalGames}</span>
+                <span className="stat-label">Games</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value stat-win">{playerStats.wins}</span>
+                <span className="stat-label">Wins</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value stat-loss">{playerStats.losses}</span>
+                <span className="stat-label">Losses</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{playerStats.draws}</span>
+                <span className="stat-label">Draws</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{playerStats.totalGames > 0 ? Math.round(playerStats.wins / playerStats.totalGames * 100) : 0}%</span>
+                <span className="stat-label">Win Rate</span>
+              </div>
+              <div className="stat-item">
+                <span className="stat-value">{playerStats.bestStreak}</span>
+                <span className="stat-label">Best Streak</span>
+              </div>
+            </div>
+          )}
 
           <div className="menu-options">
             <div className="option-group">
@@ -711,6 +761,14 @@ function App() {
           <div className="gameover-dialog">
             <h2>Game Over</h2>
             <p className="gameover-result">{gameResult}</p>
+            {lastEloChange !== null && (
+              <div className="gameover-elo">
+                <span className="gameover-elo-rating">Rating: {playerStats.elo}</span>
+                <span className={`gameover-elo-change ${lastEloChange >= 0 ? 'positive' : 'negative'}`}>
+                  {lastEloChange >= 0 ? '+' : ''}{lastEloChange}
+                </span>
+              </div>
+            )}
             <div className="gameover-actions">
               <button className="btn-primary" onClick={startAnalysis} disabled={isAnalyzing}>
                 {isAnalyzing ? 'Analyzing...' : 'Analyze Game'}
@@ -771,20 +829,52 @@ function App() {
           </div>
 
           <div className="side-panel">
-            {hintsEnabled && game.turn() === playerColor && currentHint && phase === 'playing' && (
+            {hintsEnabled && game.turn() === playerColor && currentHint && phase === 'playing' && !isViewingHistory && (
               <div className="hint-section">
-                <h3>Hint</h3>
+                <h3>Coach</h3>
                 {showHint ? (
                   <div className="hint-content">
-                    <div className="hint-move">
-                      Try: <strong>{currentHint.move.san}</strong>
+                    {/* Opponent analysis */}
+                    {currentHint.opponentAnalysis && (
+                      <div className="hint-opponent">
+                        <p>{currentHint.opponentAnalysis}</p>
+                      </div>
+                    )}
+
+                    {/* Strategic themes */}
+                    {currentHint.strategicThemes.length > 0 && (
+                      <div className="hint-themes">
+                        {currentHint.strategicThemes.map((t, i) => (
+                          <span key={i} className="theme-badge">{t}</span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Top 3 candidate moves */}
+                    <div className="hint-candidates">
+                      <div className="hint-candidates-label">Best moves:</div>
+                      {currentHint.topMoves.map((tm, i) => (
+                        <div key={i} className={`hint-candidate ${i === 0 ? 'best' : ''}`}>
+                          <div className="hint-candidate-header">
+                            <span className="hint-candidate-rank">#{i + 1}</span>
+                            <strong className="hint-candidate-move">{tm.move.san}</strong>
+                          </div>
+                          <p className="hint-candidate-explanation">{tm.explanation}</p>
+                        </div>
+                      ))}
                     </div>
-                    <p className="hint-explanation">{currentHint.explanation}</p>
+
+                    {/* Teaching advice */}
+                    <div className="hint-advice">
+                      <div className="hint-advice-label">What to look for</div>
+                      <p>{currentHint.teachingAdvice}</p>
+                    </div>
+
                     <button className="btn-small" onClick={() => setShowHint(false)}>Hide</button>
                   </div>
                 ) : (
                   <button className="btn-small btn-hint" onClick={() => setShowHint(true)}>
-                    Show hint
+                    Show coaching hint
                   </button>
                 )}
               </div>

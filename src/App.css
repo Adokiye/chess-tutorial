@@ -176,6 +176,99 @@
   text-align: center;
 }
 
+/* ELO Display */
+.elo-display {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 0.8rem;
+}
+
+.elo-rating {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: #d4a843;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.elo-label {
+  font-size: 0.75rem;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 0.2rem;
+}
+
+/* Stats Panel */
+.stats-panel {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  width: 100%;
+  background: #222326;
+  border: 1px solid #2e2f33;
+  border-radius: 12px;
+  padding: 0.8rem;
+}
+
+.stat-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.stat-value {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #e4e4e7;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-value.stat-win {
+  color: #22c55e;
+}
+
+.stat-value.stat-loss {
+  color: #ef4444;
+}
+
+.stat-label {
+  font-size: 0.65rem;
+  color: #71717a;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* Gameover ELO */
+.gameover-elo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.gameover-elo-rating {
+  font-size: 1rem;
+  color: #a1a1aa;
+}
+
+.gameover-elo-change {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.gameover-elo-change.positive {
+  color: #22c55e;
+}
+
+.gameover-elo-change.negative {
+  color: #ef4444;
+}
+
 /* =============================================
    GAME SCREEN
    ============================================= */
@@ -510,17 +603,117 @@
 .hint-content {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.7rem;
+  max-height: 400px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
 }
 
-.hint-move {
-  font-size: 1rem;
+.hint-opponent {
+  background: #1e2430;
+  border: 1px solid #2e3850;
+  border-radius: 8px;
+  padding: 0.6rem;
+}
+
+.hint-opponent p {
+  font-size: 0.8rem;
+  color: #8ba4cc;
+  line-height: 1.5;
+}
+
+.hint-themes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.theme-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 10px;
+  background: #2d3a2d;
+  color: #c4d8a8;
+  border: 1px solid #3d5a3d;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.hint-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.hint-candidates-label {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #71717a;
+}
+
+.hint-candidate {
+  background: #27282c;
+  border: 1px solid #3f3f46;
+  border-radius: 8px;
+  padding: 0.5rem;
+}
+
+.hint-candidate.best {
+  border-color: #7c9a5e;
+  background: #252e25;
+}
+
+.hint-candidate-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+
+.hint-candidate-rank {
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #52525b;
+}
+
+.hint-candidate.best .hint-candidate-rank {
+  color: #7c9a5e;
+}
+
+.hint-candidate-move {
+  font-size: 0.95rem;
   color: #fff;
 }
 
-.hint-explanation {
-  font-size: 0.85rem;
+.hint-candidate-explanation {
+  font-size: 0.78rem;
   color: #a1a1aa;
+  line-height: 1.5;
+}
+
+.hint-advice {
+  background: #1a2e1a;
+  border: 1px solid #2d4a2d;
+  border-radius: 8px;
+  padding: 0.6rem;
+}
+
+.hint-advice-label {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7c9a5e;
+  margin-bottom: 0.3rem;
+}
+
+.hint-advice p {
+  font-size: 0.8rem;
+  color: #c4d8a8;
   line-height: 1.5;
 }
 

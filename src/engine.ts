@@ -529,77 +529,342 @@ export interface MoveAnalysis {
   fen: string;
 }
 
-export function analyzeGame(pgn: string): MoveAnalysis[] {
-  const game = new Chess();
-  game.loadPgn(pgn);
-  const moves = game.history({ verbose: true });
+// Analyze game async in chunks to avoid blocking the UI
+export function analyzeGame(pgn: string): Promise<MoveAnalysis[]> {
+  return new Promise((resolve) => {
+    const game = new Chess();
+    game.loadPgn(pgn);
+    const moves = game.history({ verbose: true });
+    const analysis: MoveAnalysis[] = [];
+    const replayGame = new Chess();
+    let i = 0;
 
-  const analysis: MoveAnalysis[] = [];
-  const replayGame = new Chess();
+    function processChunk() {
+      const chunkEnd = Math.min(i + 3, moves.length); // 3 moves per chunk
+      while (i < chunkEnd) {
+        const move = moves[i];
+        const isWhite = move.color === 'w';
+        const moveNumber = Math.floor(i / 2) + 1;
 
-  for (let i = 0; i < moves.length; i++) {
-    const move = moves[i];
-    const isWhite = move.color === 'w';
-    const moveNumber = Math.floor(i / 2) + 1;
+        // Find the best move (depth 2 for speed)
+        const best = getBestMove(replayGame, 2);
+        const bestScore = best ? best.score : 0;
+        const bestMoveSan = best ? best.move.san : move.san;
 
-    // Find the best move at this position
-    const best = getBestMove(replayGame, 3);
-    const topMoves = getTopMoves(replayGame, 1, 3);
-    const bestScore = topMoves.length > 0 ? topMoves[0].score : 0;
-    const bestMoveSan = best ? best.move.san : move.san;
+        // Evaluate the actual move played
+        replayGame.move(move);
+        const evalAfter = evaluateBoard(replayGame);
 
-    // Evaluate the actual move played
-    replayGame.move(move);
-    const evalAfter = evaluateBoard(replayGame);
+        // Classify the move
+        const classification = classifyMove(evalAfter, bestScore, isWhite);
 
-    // Classify the move
-    const classification = classifyMove(
-      evalAfter,
-      bestScore,
-      isWhite
-    );
+        // Build explanation
+        let explanation = '';
+        if (classification.label === 'Excellent') {
+          explanation = bestMoveSan === move.san
+            ? 'This was the best move in this position.'
+            : 'Very close to the best move. Well played!';
+        } else if (classification.label === 'Good') {
+          explanation = `A solid choice. The engine slightly preferred ${bestMoveSan}.`;
+        } else if (classification.label === 'Inaccuracy') {
+          explanation = `A small inaccuracy. ${bestMoveSan} was stronger here.`;
+        } else if (classification.label === 'Mistake') {
+          explanation = `This was a mistake. ${bestMoveSan} was much better because it maintains a stronger position.`;
+        } else {
+          explanation = `A blunder that significantly worsens your position. ${bestMoveSan} was the correct move.`;
+        }
 
-    // Build explanation
-    let explanation = '';
-    if (classification.label === 'Excellent') {
-      explanation = bestMoveSan === move.san
-        ? 'This was the best move in this position.'
-        : 'Very close to the best move. Well played!';
-    } else if (classification.label === 'Good') {
-      explanation = `A solid choice. The engine slightly preferred ${bestMoveSan}.`;
-    } else if (classification.label === 'Inaccuracy') {
-      explanation = `A small inaccuracy. ${bestMoveSan} was stronger here.`;
-    } else if (classification.label === 'Mistake') {
-      explanation = `This was a mistake. ${bestMoveSan} was much better because it maintains a stronger position.`;
-    } else {
-      explanation = `A blunder that significantly worsens your position. ${bestMoveSan} was the correct move.`;
+        analysis.push({
+          moveNumber,
+          color: move.color,
+          san: move.san,
+          evaluation: evalAfter,
+          bestMoveSan,
+          bestMoveEval: bestScore,
+          classification,
+          explanation,
+          fen: replayGame.fen(),
+        });
+
+        i++;
+      }
+
+      if (i < moves.length) {
+        setTimeout(processChunk, 0); // yield to UI between chunks
+      } else {
+        resolve(analysis);
+      }
     }
 
-    analysis.push({
-      moveNumber,
-      color: move.color,
-      san: move.san,
-      evaluation: evalAfter,
-      bestMoveSan,
-      bestMoveEval: bestScore,
-      classification,
-      explanation,
-      fen: replayGame.fen(),
-    });
-  }
-
-  return analysis;
+    processChunk();
+  });
 }
 
-// Get a hint for the current position
-export function getHint(game: Chess): { move: Move; explanation: string } | null {
-  const topMoves = getTopMoves(game, 1, 3);
-  if (topMoves.length === 0) return null;
+// ─── Enhanced Hint System ───
 
-  const bestMove = topMoves[0].move;
-  const explanation = explainMove(bestMove, game);
+export interface EnhancedHint {
+  topMoves: { move: Move; score: number; explanation: string }[];
+  opponentAnalysis: string;
+  strategicThemes: string[];
+  teachingAdvice: string;
+}
 
-  return { move: bestMove, explanation };
+export function getEnhancedHint(game: Chess, playerColor: 'w' | 'b'): EnhancedHint | null {
+  const top = getTopMoves(game, 3, 3);
+  if (top.length === 0) return null;
+
+  const topMoves = top.map(t => ({
+    move: t.move,
+    score: t.score,
+    explanation: explainMove(t.move, game),
+  }));
+
+  const opponentAnalysis = analyzeOpponentLastMove(game, playerColor);
+  const strategicThemes = detectStrategicThemes(game, playerColor);
+  const teachingAdvice = getTeachingAdvice(game, strategicThemes, playerColor);
+
+  return { topMoves, opponentAnalysis, strategicThemes, teachingAdvice };
+}
+
+function analyzeOpponentLastMove(game: Chess, playerColor: 'w' | 'b'): string {
+  const history = game.history({ verbose: true });
+  if (history.length === 0) return '';
+  const last = history[history.length - 1];
+  if (last.color === playerColor) return ''; // Last move was ours
+
+  const pieceNames: Record<string, string> = {
+    p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king'
+  };
+  const pn = pieceNames[last.piece] || last.piece;
+  const parts: string[] = [];
+
+  if (last.captured) {
+    const cn = pieceNames[last.captured] || last.captured;
+    parts.push(`captured your ${cn} with their ${pn}`);
+  }
+
+  if (game.inCheck()) {
+    parts.push('put your king in check — you must deal with this immediately');
+  }
+
+  if (last.flags.includes('k') || last.flags.includes('q')) {
+    parts.push('castled, securing their king and activating their rook');
+  }
+
+  const centralSquares = ['d4', 'd5', 'e4', 'e5'];
+  if (centralSquares.includes(last.to) && !last.captured) {
+    parts.push(`moved their ${pn} to the center (${last.to}), strengthening their grip on key squares`);
+  }
+
+  const backRank = last.color === 'w' ? '1' : '8';
+  if (last.from[1] === backRank && last.piece !== 'p' && last.piece !== 'k' && !last.captured) {
+    parts.push(`developed their ${pn} to ${last.to}`);
+  }
+
+  // Check if opponent is building an attack on our king
+  const kingSquare = findKing(game, playerColor);
+  if (kingSquare) {
+    const attackers = countAttackersNearKing(game, playerColor, kingSquare);
+    if (attackers >= 2) {
+      parts.push('building pressure near your king — be alert for incoming threats');
+    }
+  }
+
+  if (last.piece === 'r') {
+    const file = last.to[0];
+    const status = getFileStatus(game, file, last.color);
+    if (status === 'open' || status === 'semi-open') {
+      parts.push(`placed their rook on an ${status} file, increasing its power`);
+    }
+  }
+
+  if (parts.length === 0) {
+    parts.push(`moved their ${pn} from ${last.from} to ${last.to}`);
+  }
+
+  return 'Your opponent ' + parts.join(', and ') + '.';
+}
+
+function findKing(game: Chess, color: 'w' | 'b'): string | null {
+  const board = game.board();
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const p = board[r][f];
+      if (p && p.type === 'k' && p.color === color) {
+        return `${String.fromCharCode(97 + f)}${8 - r}`;
+      }
+    }
+  }
+  return null;
+}
+
+function countAttackersNearKing(game: Chess, kingColor: 'w' | 'b', kingSquare: string): number {
+  const kf = kingSquare.charCodeAt(0) - 97;
+  const kr = parseInt(kingSquare[1]);
+  const attackerColor = kingColor === 'w' ? 'b' : 'w';
+  let count = 0;
+  for (let df = -2; df <= 2; df++) {
+    for (let dr = -2; dr <= 2; dr++) {
+      const f = kf + df;
+      const r = kr + dr;
+      if (f < 0 || f > 7 || r < 1 || r > 8) continue;
+      const sq = `${String.fromCharCode(97 + f)}${r}` as Square;
+      const piece = game.get(sq);
+      if (piece && piece.color === attackerColor && piece.type !== 'p') count++;
+    }
+  }
+  return count;
+}
+
+function detectStrategicThemes(game: Chess, playerColor: 'w' | 'b'): string[] {
+  const themes: string[] = [];
+  const opponentColor = playerColor === 'w' ? 'b' : 'w';
+  const board = game.board();
+
+  // Development check
+  const developed = countDevelopedPieces(game, playerColor);
+  const moveNum = Math.ceil(game.moveNumber());
+  if (moveNum <= 12 && developed < 3) {
+    themes.push('Development needed');
+  }
+
+  // King safety
+  const kingSquare = findKing(game, playerColor);
+  if (kingSquare) {
+    // Check if castled (king on g1/c1 or g8/c8)
+    const castledSquares = playerColor === 'w' ? ['g1', 'c1'] : ['g8', 'c8'];
+    const isCastled = castledSquares.includes(kingSquare);
+    if (!isCastled && moveNum > 8) {
+      themes.push('King still in center');
+    }
+    if (countAttackersNearKing(game, playerColor, kingSquare) >= 2) {
+      themes.push('King under pressure');
+    }
+  }
+
+  // Fork opportunities — check if any candidate move attacks 2+ pieces
+  const moves = game.moves({ verbose: true });
+  for (const m of moves.slice(0, 15)) {
+    const testG = new Chess(game.fen());
+    testG.move(m);
+    let attacked = 0;
+    const tb = testG.board();
+    for (let r2 = 0; r2 < 8; r2++) {
+      for (let f2 = 0; f2 < 8; f2++) {
+        const p2 = tb[r2][f2];
+        if (p2 && p2.color === opponentColor && p2.type !== 'p') {
+          const sq2 = `${String.fromCharCode(97 + f2)}${8 - r2}` as Square;
+          if (testG.isAttacked(sq2, playerColor)) attacked++;
+        }
+      }
+    }
+    if (attacked >= 2 && m.piece === 'n') {
+      themes.push('Fork opportunity');
+      break;
+    }
+  }
+
+  // Open files for rooks
+  for (let f = 0; f < 8; f++) {
+    const file = String.fromCharCode(97 + f);
+    const status = getFileStatus(game, file, playerColor);
+    if (status === 'open' || status === 'semi-open') {
+      // Check if we have a rook that could use this file
+      let hasRookOnFile = false;
+      for (let r = 1; r <= 8; r++) {
+        const p = game.get(`${file}${r}` as Square);
+        if (p && p.type === 'r' && p.color === playerColor) hasRookOnFile = true;
+      }
+      if (!hasRookOnFile) {
+        themes.push('Open file available');
+        break;
+      }
+    }
+  }
+
+  // Material advantage/disadvantage
+  let materialDiff = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const p = board[r][f];
+      if (p && p.type !== 'k') {
+        const val = PIECE_VALUES[p.type] || 0;
+        materialDiff += p.color === playerColor ? val : -val;
+      }
+    }
+  }
+  if (materialDiff > 200) themes.push('Material advantage');
+  if (materialDiff < -200) themes.push('Material deficit');
+
+  // Passed pawns
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const p = board[r][f];
+      if (p && p.type === 'p' && p.color === playerColor) {
+        const sq = `${String.fromCharCode(97 + f)}${8 - r}`;
+        if (isPassedPawn(game, sq, playerColor)) {
+          themes.push('Passed pawn');
+          break;
+        }
+      }
+    }
+  }
+
+  return [...new Set(themes)]; // deduplicate
+}
+
+function getTeachingAdvice(game: Chess, themes: string[], _playerColor: 'w' | 'b'): string {
+  const moveNum = Math.ceil(game.moveNumber());
+
+  // Priority-based advice
+  if (game.inCheck()) {
+    return 'You\'re in check! You must block, capture the attacker, or move your king. Look for a response that also improves your position — sometimes the best defense is a counter-threat.';
+  }
+
+  if (themes.includes('Fork opportunity')) {
+    return 'There\'s a fork opportunity in this position! Look for a knight move that attacks two or more valuable pieces at once. The opponent can only save one, so you win material.';
+  }
+
+  if (themes.includes('King under pressure')) {
+    return 'Your king is under pressure. Consider defensive moves: block attack lines, trade off attacking pieces, or create a counter-attack. Sometimes the best defense is to threaten something even bigger.';
+  }
+
+  if (themes.includes('King still in center') && themes.includes('Development needed')) {
+    return 'Your king is still in the center and you have undeveloped pieces. Priority: get your minor pieces out and castle as soon as possible. An exposed king in the center is the #1 cause of quick losses.';
+  }
+
+  if (themes.includes('King still in center')) {
+    return 'Your king hasn\'t castled yet. Look for a way to castle soon — an uncastled king becomes increasingly vulnerable as more pieces enter the game.';
+  }
+
+  if (themes.includes('Development needed')) {
+    return 'You still have pieces on their starting squares. Develop your knights and bishops before launching any attacks. Each undeveloped piece is a soldier not in the fight.';
+  }
+
+  if (themes.includes('Material advantage')) {
+    return 'You have a material advantage! Consider trading pieces to simplify the position — the fewer pieces on the board, the harder it is for your opponent to create counterplay. Head toward an endgame where your extra material wins.';
+  }
+
+  if (themes.includes('Material deficit')) {
+    return 'You\'re behind in material. Avoid trades and look for tactical complications — your best chance is to create threats and put pressure on your opponent. An active position can compensate for missing material.';
+  }
+
+  if (themes.includes('Passed pawn')) {
+    return 'You have a passed pawn! Support it with your pieces and consider pushing it. A passed pawn is a powerful asset, especially in the endgame — it ties down enemy pieces and can promote if not stopped.';
+  }
+
+  if (themes.includes('Open file available')) {
+    return 'There\'s an open or semi-open file available. Place a rook on it to maximize its power. Rooks need open lines to be effective — they\'re wasted behind closed pawns.';
+  }
+
+  // Game phase advice
+  if (moveNum <= 10) {
+    return 'Opening phase: Focus on controlling the center with pawns, developing knights and bishops to active squares, and preparing to castle. Don\'t move the same piece twice unless there\'s a strong reason.';
+  }
+  if (moveNum <= 25) {
+    return 'Middlegame: Look for your worst-placed piece and find a better square for it. Create threats while keeping your position solid. Ask yourself: what is my opponent\'s plan, and can I prevent it while improving my own position?';
+  }
+  return 'Endgame: Activate your king — it\'s a strong piece now! Push passed pawns, centralize your pieces, and look for ways to create new passed pawns. Every tempo matters.';
 }
 
 // Get valid moves for a specific square
