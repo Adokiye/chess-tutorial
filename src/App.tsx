@@ -10,6 +10,7 @@ import {
   type EnhancedHint,
 } from './engine';
 import { ChessPiece } from './pieces';
+import { playMoveSound, playCaptureSound, playCheckSound, playCastleSound, playGameOverSound } from './sounds';
 import {
   saveGame,
   loadGames,
@@ -53,9 +54,26 @@ function App() {
   const [playerStats, setPlayerStats] = useState<PlayerStats>(getPlayerStats());
   const [lastEloChange, setLastEloChange] = useState<number | null>(null);
   const [viewingMoveIndex, setViewingMoveIndex] = useState<number | null>(null); // null = live position
+  const [confirmingResign, setConfirmingResign] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [soundEnabled, setSoundEnabled] = useState(true);
   const moveListRef = useRef<HTMLDivElement>(null);
 
   const depthMap: Record<Difficulty, number> = { easy: 1, medium: 3, hard: 4 };
+
+  // Play appropriate sound for a chess move
+  const playSound = useCallback((san: string, captured: boolean, isCastle: boolean) => {
+    if (!soundEnabled) return;
+    if (san.includes('#') || san.includes('+')) {
+      playCheckSound();
+    } else if (isCastle) {
+      playCastleSound();
+    } else if (captured) {
+      playCaptureSound();
+    } else {
+      playMoveSound();
+    }
+  }, [soundEnabled]);
 
   // Build the board to display: either the live game or a historical position
   const displayGame = (() => {
@@ -68,6 +86,35 @@ function App() {
   })();
 
   const isViewingHistory = viewingMoveIndex !== null;
+
+  // Compute captured pieces
+  const getCaptured = (g: Chess) => {
+    const starting: Record<string, number> = { wp: 8, wn: 2, wb: 2, wr: 2, wq: 1, bp: 8, bn: 2, bb: 2, br: 2, bq: 1 };
+    const current: Record<string, number> = {};
+    for (const row of g.board()) {
+      for (const piece of row) {
+        if (piece) {
+          const key = `${piece.color}${piece.type}`;
+          current[key] = (current[key] || 0) + 1;
+        }
+      }
+    }
+    const captured: { color: string; type: string }[] = [];
+    for (const [key, count] of Object.entries(starting)) {
+      const diff = count - (current[key] || 0);
+      for (let i = 0; i < diff; i++) {
+        captured.push({ color: key[0], type: key.slice(1) });
+      }
+    }
+    return captured;
+  };
+  const allCaptured = getCaptured(displayGame);
+  const whiteCaptured = allCaptured.filter(p => p.color === 'w');
+  const blackCaptured = allCaptured.filter(p => p.color === 'b');
+  const pieceVals: Record<string, number> = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+  const whiteMat = whiteCaptured.reduce((s, p) => s + (pieceVals[p.type] || 0), 0);
+  const blackMat = blackCaptured.reduce((s, p) => s + (pieceVals[p.type] || 0), 0);
+  const materialAdvantage = blackMat - whiteMat;
 
   // Load saved games on mount
   useEffect(() => {
@@ -122,14 +169,16 @@ function App() {
       const result = getBestMove(newGame, depth);
 
       if (result) {
-        newGame.move(result.move);
-        setLastMove({ from: result.move.from as Square, to: result.move.to as Square });
-        setMoveHistory(prev => [...prev, result.move.san]);
+        const m = result.move;
+        newGame.move(m);
+        setLastMove({ from: m.from as Square, to: m.to as Square });
+        setMoveHistory(prev => [...prev, m.san]);
         setGame(newGame);
+        playSound(m.san, !!m.captured, m.flags.includes('k') || m.flags.includes('q'));
       }
       setIsThinking(false);
     }, 100);
-  }, [game, difficulty]);
+  }, [game, difficulty, playSound]);
 
   // Check for game over
   useEffect(() => {
@@ -180,9 +229,10 @@ function App() {
     setPlayerStats(stats);
     setLastEloChange(eloChange);
 
+    if (soundEnabled) playGameOverSound(resultType === 'win');
     setGameResult(result);
     setPhase('gameover');
-  }, [game, phase, playerColor, isThinking, makeAiMove]);
+  }, [game, phase, playerColor, isThinking, makeAiMove, soundEnabled]);
 
   const startGame = () => {
     const newGame = new Chess();
@@ -269,6 +319,7 @@ function App() {
         setLastMove({ from, to });
         setMoveHistory(prev => [...prev, move.san]);
         setGame(newGame);
+        playSound(move.san, !!move.captured, move.flags.includes('k') || move.flags.includes('q'));
       }
     } catch {
       // Invalid move
@@ -286,8 +337,9 @@ function App() {
 
   const startAnalysis = () => {
     setIsAnalyzing(true);
+    setAnalysisProgress(0);
     const pgn = game.pgn();
-    analyzeGame(pgn).then(data => {
+    analyzeGame(pgn, (pct) => setAnalysisProgress(pct)).then(data => {
       setAnalysisData(data);
       setAnalysisIndex(0);
       setIsAnalyzing(false);
@@ -296,6 +348,12 @@ function App() {
   };
 
   const resign = () => {
+    if (!confirmingResign) {
+      setConfirmingResign(true);
+      setTimeout(() => setConfirmingResign(false), 5000); // auto-dismiss
+      return;
+    }
+    setConfirmingResign(false);
     const result = 'You resigned.';
     if (currentGameId) {
       const saved: SavedGame = {
@@ -316,9 +374,64 @@ function App() {
     const { stats, eloChange } = updateStatsAfterGame('loss', difficulty, moveHistory.length);
     setPlayerStats(stats);
     setLastEloChange(eloChange);
+    if (soundEnabled) playGameOverSound(false);
     setGameResult(result);
     setPhase('gameover');
   };
+
+  // Undo last move pair (player move + AI response)
+  const undoMove = () => {
+    if (isThinking || moveHistory.length < 2 || isViewingHistory || phase !== 'playing') return;
+    const newHistory = moveHistory.slice(0, -2);
+    const newGame = new Chess();
+    for (const san of newHistory) newGame.move(san);
+    setGame(newGame);
+    setMoveHistory(newHistory);
+    setLastMove(null);
+    setSelectedSquare(null);
+    setValidMoves([]);
+  };
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (phase === 'playing') {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          setViewingMoveIndex(prev => {
+            if (prev === null) return moveHistory.length > 0 ? moveHistory.length - 2 : null;
+            return prev > 0 ? prev - 1 : 0;
+          });
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          setViewingMoveIndex(prev => {
+            if (prev === null) return null;
+            if (prev >= moveHistory.length - 1) return null;
+            return prev + 1;
+          });
+        } else if (e.key === 'Escape') {
+          setViewingMoveIndex(null);
+          setConfirmingResign(false);
+        }
+      } else if (phase === 'analysis') {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          setAnalysisIndex(prev => Math.max(0, prev - 1));
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          setAnalysisIndex(prev => Math.min(analysisData.length - 1, prev + 1));
+        } else if (e.key === 'Home') {
+          e.preventDefault();
+          setAnalysisIndex(0);
+        } else if (e.key === 'End') {
+          e.preventDefault();
+          setAnalysisIndex(analysisData.length - 1);
+        }
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [phase, moveHistory.length, analysisData.length]);
 
   const renderPiece = (color: string, type: string) => (
     <ChessPiece color={color} type={type} className="piece-svg" />
@@ -771,7 +884,7 @@ function App() {
             )}
             <div className="gameover-actions">
               <button className="btn-primary" onClick={startAnalysis} disabled={isAnalyzing}>
-                {isAnalyzing ? 'Analyzing...' : 'Analyze Game'}
+                {isAnalyzing ? `Analyzing... ${analysisProgress}%` : 'Analyze Game'}
               </button>
               <button className="btn-secondary" onClick={() => setPhase('menu')}>
                 New Game
@@ -791,6 +904,13 @@ function App() {
           </div>
           <div className="topbar-right">
             <button
+              className={`topbar-btn ${soundEnabled ? 'active' : ''}`}
+              onClick={() => setSoundEnabled(!soundEnabled)}
+              title="Toggle sound"
+            >
+              {soundEnabled ? '\u266B' : '\u266A'}
+            </button>
+            <button
               className={`topbar-btn ${hintsEnabled ? 'active' : ''}`}
               onClick={() => setHintsEnabled(!hintsEnabled)}
               title="Toggle hints"
@@ -800,9 +920,25 @@ function App() {
             <button className="topbar-btn" onClick={() => setFlipBoard(!flipBoard)} title="Flip board">
               &#8693;
             </button>
-            <button className="topbar-btn resign-btn" onClick={resign} title="Resign">
-              Resign
+            <button
+              className="topbar-btn"
+              onClick={undoMove}
+              disabled={isThinking || moveHistory.length < 2 || phase !== 'playing'}
+              title="Take back move"
+            >
+              Undo
             </button>
+            {confirmingResign ? (
+              <div className="resign-confirm">
+                <span>Resign?</span>
+                <button className="topbar-btn resign-yes" onClick={resign}>Yes</button>
+                <button className="topbar-btn" onClick={() => setConfirmingResign(false)}>No</button>
+              </div>
+            ) : (
+              <button className="topbar-btn resign-btn" onClick={resign} title="Resign">
+                Resign
+              </button>
+            )}
           </div>
         </div>
 
@@ -811,20 +947,40 @@ function App() {
 
           <div className="board-container">
             <div className="player-label opponent">
-              <span className="player-icon">
-                <ChessPiece color={playerColor === 'w' ? 'b' : 'w'} type="k" className="label-piece-svg" />
-              </span>
-              <span>Computer ({difficulty})</span>
-              {isThinking && <span className="thinking-indicator">Thinking...</span>}
+              <div className="player-label-left">
+                <span className="player-icon">
+                  <ChessPiece color={playerColor === 'w' ? 'b' : 'w'} type="k" className="label-piece-svg" />
+                </span>
+                <span>Computer ({difficulty})</span>
+                {isThinking && <span className="thinking-indicator">Thinking...</span>}
+              </div>
+              <div className="captured-pieces">
+                {(playerColor === 'w' ? whiteCaptured : blackCaptured).map((p, i) => (
+                  <ChessPiece key={i} color={p.color} type={p.type} className="captured-svg" />
+                ))}
+                {(playerColor === 'w' ? materialAdvantage < 0 : materialAdvantage > 0) && (
+                  <span className="material-diff">+{Math.abs(materialAdvantage)}</span>
+                )}
+              </div>
             </div>
 
             {renderBoard()}
 
             <div className="player-label self">
-              <span className="player-icon">
-                <ChessPiece color={playerColor} type="k" className="label-piece-svg" />
-              </span>
-              <span>You</span>
+              <div className="player-label-left">
+                <span className="player-icon">
+                  <ChessPiece color={playerColor} type="k" className="label-piece-svg" />
+                </span>
+                <span>You</span>
+              </div>
+              <div className="captured-pieces">
+                {(playerColor === 'w' ? blackCaptured : whiteCaptured).map((p, i) => (
+                  <ChessPiece key={i} color={p.color} type={p.type} className="captured-svg" />
+                ))}
+                {(playerColor === 'w' ? materialAdvantage > 0 : materialAdvantage < 0) && (
+                  <span className="material-diff">+{Math.abs(materialAdvantage)}</span>
+                )}
+              </div>
             </div>
           </div>
 

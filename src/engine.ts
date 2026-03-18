@@ -530,7 +530,7 @@ export interface MoveAnalysis {
 }
 
 // Analyze game async in chunks to avoid blocking the UI
-export function analyzeGame(pgn: string): Promise<MoveAnalysis[]> {
+export function analyzeGame(pgn: string, onProgress?: (pct: number) => void): Promise<MoveAnalysis[]> {
   return new Promise((resolve) => {
     const game = new Chess();
     game.loadPgn(pgn);
@@ -590,8 +590,10 @@ export function analyzeGame(pgn: string): Promise<MoveAnalysis[]> {
       }
 
       if (i < moves.length) {
+        if (onProgress) onProgress(Math.round((i / moves.length) * 100));
         setTimeout(processChunk, 0); // yield to UI between chunks
       } else {
+        if (onProgress) onProgress(100);
         resolve(analysis);
       }
     }
