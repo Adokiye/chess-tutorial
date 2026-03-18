@@ -1,0 +1,767 @@
+import { useState, useCallback, useEffect, useRef } from 'react';
+import { Chess, type Square, type Move } from 'chess.js';
+import {
+  getBestMove,
+  getHint,
+  getValidMoves,
+  analyzeGame,
+  evaluateBoard,
+  type MoveAnalysis,
+} from './engine';
+import { ChessPiece } from './pieces';
+import {
+  saveGame,
+  loadGames,
+  deleteGame,
+  generateGameId,
+  formatDate,
+  formatFullDate,
+  type SavedGame,
+} from './storage';
+import Learn from './Learn';
+import './App.css';
+
+type GamePhase = 'menu' | 'playing' | 'gameover' | 'analysis' | 'learn';
+type Difficulty = 'easy' | 'medium' | 'hard';
+type PlayerColor = 'w' | 'b';
+
+function App() {
+  const [game, setGame] = useState(new Chess());
+  const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  const [validMoves, setValidMoves] = useState<Square[]>([]);
+  const [phase, setPhase] = useState<GamePhase>('menu');
+  const [playerColor, setPlayerColor] = useState<PlayerColor>('w');
+  const [difficulty, setDifficulty] = useState<Difficulty>('medium');
+  const [hintsEnabled, setHintsEnabled] = useState(true);
+  const [currentHint, setCurrentHint] = useState<{ move: Move; explanation: string } | null>(null);
+  const [showHint, setShowHint] = useState(false);
+  const [moveHistory, setMoveHistory] = useState<string[]>([]);
+  const [analysisData, setAnalysisData] = useState<MoveAnalysis[]>([]);
+  const [analysisIndex, setAnalysisIndex] = useState(0);
+  const [isThinking, setIsThinking] = useState(false);
+  const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null);
+  const [gameResult, setGameResult] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [flipBoard, setFlipBoard] = useState(false);
+  const [promotionPending, setPromotionPending] = useState<{ from: Square; to: Square } | null>(null);
+  const [currentGameId, setCurrentGameId] = useState<string | null>(null);
+  const [savedGames, setSavedGames] = useState<SavedGame[]>([]);
+  const moveListRef = useRef<HTMLDivElement>(null);
+
+  const depthMap: Record<Difficulty, number> = { easy: 1, medium: 3, hard: 4 };
+
+  // Load saved games on mount
+  useEffect(() => {
+    setSavedGames(loadGames());
+  }, []);
+
+  // Auto-save game after each move
+  useEffect(() => {
+    if (phase === 'playing' && currentGameId && moveHistory.length > 0) {
+      const saved: SavedGame = {
+        id: currentGameId,
+        fen: game.fen(),
+        pgn: game.pgn(),
+        moveHistory: [...moveHistory],
+        playerColor,
+        difficulty,
+        hintsEnabled,
+        date: new Date().toISOString(),
+        moveCount: moveHistory.length,
+      };
+      saveGame(saved);
+      setSavedGames(loadGames());
+    }
+  }, [game, moveHistory, phase, currentGameId, playerColor, difficulty, hintsEnabled]);
+
+  // Auto-scroll move list
+  useEffect(() => {
+    if (moveListRef.current) {
+      moveListRef.current.scrollTop = moveListRef.current.scrollHeight;
+    }
+  }, [moveHistory]);
+
+  // Update hint when it's the player's turn
+  useEffect(() => {
+    if (phase === 'playing' && hintsEnabled && game.turn() === playerColor && !game.isGameOver()) {
+      const hint = getHint(game);
+      setCurrentHint(hint);
+    } else {
+      setCurrentHint(null);
+      setShowHint(false);
+    }
+  }, [game, phase, hintsEnabled, playerColor]);
+
+  // Make AI move
+  const makeAiMove = useCallback(() => {
+    if (game.isGameOver()) return;
+
+    setIsThinking(true);
+    setTimeout(() => {
+      const newGame = new Chess(game.fen());
+      const depth = depthMap[difficulty];
+      const result = getBestMove(newGame, depth);
+
+      if (result) {
+        newGame.move(result.move);
+        setLastMove({ from: result.move.from as Square, to: result.move.to as Square });
+        setMoveHistory(prev => [...prev, result.move.san]);
+        setGame(newGame);
+      }
+      setIsThinking(false);
+    }, 100);
+  }, [game, difficulty]);
+
+  // Check for game over
+  useEffect(() => {
+    if (phase !== 'playing') return;
+    if (!game.isGameOver()) {
+      if (game.turn() !== playerColor && !isThinking) {
+        makeAiMove();
+      }
+      return;
+    }
+
+    let result = '';
+    if (game.isCheckmate()) {
+      result = game.turn() === playerColor ? 'You lost by checkmate.' : 'You won by checkmate!';
+    } else if (game.isStalemate()) {
+      result = 'Draw by stalemate.';
+    } else if (game.isThreefoldRepetition()) {
+      result = 'Draw by threefold repetition.';
+    } else if (game.isInsufficientMaterial()) {
+      result = 'Draw by insufficient material.';
+    } else if (game.isDraw()) {
+      result = 'Draw by 50-move rule.';
+    }
+
+    // Save completed game
+    if (currentGameId) {
+      const saved: SavedGame = {
+        id: currentGameId,
+        fen: game.fen(),
+        pgn: game.pgn(),
+        moveHistory: [...moveHistory],
+        playerColor,
+        difficulty,
+        hintsEnabled,
+        date: new Date().toISOString(),
+        result,
+        moveCount: moveHistory.length,
+      };
+      saveGame(saved);
+      setSavedGames(loadGames());
+    }
+
+    setGameResult(result);
+    setPhase('gameover');
+  }, [game, phase, playerColor, isThinking, makeAiMove]);
+
+  const startGame = () => {
+    const newGame = new Chess();
+    const id = generateGameId();
+    setGame(newGame);
+    setCurrentGameId(id);
+    setSelectedSquare(null);
+    setValidMoves([]);
+    setMoveHistory([]);
+    setLastMove(null);
+    setCurrentHint(null);
+    setShowHint(false);
+    setGameResult('');
+    setAnalysisData([]);
+    setFlipBoard(playerColor === 'b');
+    setPhase('playing');
+  };
+
+  const resumeGame = (saved: SavedGame) => {
+    const newGame = new Chess();
+    newGame.loadPgn(saved.pgn);
+    setGame(newGame);
+    setCurrentGameId(saved.id);
+    setPlayerColor(saved.playerColor);
+    setDifficulty(saved.difficulty);
+    setHintsEnabled(saved.hintsEnabled);
+    setMoveHistory(saved.moveHistory);
+    setSelectedSquare(null);
+    setValidMoves([]);
+    setLastMove(null);
+    setCurrentHint(null);
+    setShowHint(false);
+    setGameResult('');
+    setAnalysisData([]);
+    setFlipBoard(saved.playerColor === 'b');
+    setPhase('playing');
+  };
+
+  const handleDeleteGame = (id: string) => {
+    deleteGame(id);
+    setSavedGames(loadGames());
+  };
+
+  const handleSquareClick = (square: Square) => {
+    if (phase !== 'playing' || game.turn() !== playerColor || isThinking) return;
+
+    const piece = game.get(square);
+
+    if (piece && piece.color === playerColor) {
+      setSelectedSquare(square);
+      setValidMoves(getValidMoves(game, square));
+      return;
+    }
+
+    if (selectedSquare) {
+      if (validMoves.includes(square)) {
+        const piece = game.get(selectedSquare);
+        if (piece && piece.type === 'p') {
+          const targetRank = square[1];
+          if ((piece.color === 'w' && targetRank === '8') || (piece.color === 'b' && targetRank === '1')) {
+            setPromotionPending({ from: selectedSquare, to: square });
+            return;
+          }
+        }
+        makePlayerMove(selectedSquare, square);
+      } else {
+        setSelectedSquare(null);
+        setValidMoves([]);
+      }
+    }
+  };
+
+  const makePlayerMove = (from: Square, to: Square, promotion?: string) => {
+    const newGame = new Chess(game.fen());
+    try {
+      const move = newGame.move({ from, to, promotion: promotion || undefined });
+      if (move) {
+        setLastMove({ from, to });
+        setMoveHistory(prev => [...prev, move.san]);
+        setGame(newGame);
+      }
+    } catch {
+      // Invalid move
+    }
+    setSelectedSquare(null);
+    setValidMoves([]);
+    setPromotionPending(null);
+  };
+
+  const handlePromotion = (piece: string) => {
+    if (promotionPending) {
+      makePlayerMove(promotionPending.from, promotionPending.to, piece);
+    }
+  };
+
+  const startAnalysis = () => {
+    setIsAnalyzing(true);
+    setTimeout(() => {
+      const pgn = game.pgn();
+      const data = analyzeGame(pgn);
+      setAnalysisData(data);
+      setAnalysisIndex(0);
+      setIsAnalyzing(false);
+      setPhase('analysis');
+    }, 100);
+  };
+
+  const resign = () => {
+    const result = 'You resigned.';
+    if (currentGameId) {
+      const saved: SavedGame = {
+        id: currentGameId,
+        fen: game.fen(),
+        pgn: game.pgn(),
+        moveHistory: [...moveHistory],
+        playerColor,
+        difficulty,
+        hintsEnabled,
+        date: new Date().toISOString(),
+        result,
+        moveCount: moveHistory.length,
+      };
+      saveGame(saved);
+      setSavedGames(loadGames());
+    }
+    setGameResult(result);
+    setPhase('gameover');
+  };
+
+  const renderPiece = (color: string, type: string) => (
+    <ChessPiece color={color} type={type} className="piece-svg" />
+  );
+
+  const renderSquare = (rank: number, file: number) => {
+    const displayRank = flipBoard ? rank : 7 - rank;
+    const displayFile = flipBoard ? 7 - file : file;
+    const squareName = `${String.fromCharCode(97 + displayFile)}${displayRank + 1}` as Square;
+    const isLight = (displayRank + displayFile) % 2 === 1;
+    const piece = game.get(squareName);
+    const isSelected = selectedSquare === squareName;
+    const isValidMove = validMoves.includes(squareName);
+    const isLastMoveSquare = lastMove && (lastMove.from === squareName || lastMove.to === squareName);
+    const isHintSquare = showHint && currentHint && (currentHint.move.from === squareName || currentHint.move.to === squareName);
+    const isCheck = piece && piece.type === 'k' && game.inCheck() && piece.color === game.turn();
+
+    let className = `square ${isLight ? 'light' : 'dark'}`;
+    if (isSelected) className += ' selected';
+    if (isLastMoveSquare) className += ' last-move';
+    if (isHintSquare) className += ' hint-highlight';
+    if (isCheck) className += ' in-check';
+
+    return (
+      <div
+        key={squareName}
+        className={className}
+        onClick={() => handleSquareClick(squareName)}
+      >
+        {file === 0 && <span className="coord-rank">{displayRank + 1}</span>}
+        {rank === 7 && <span className="coord-file">{String.fromCharCode(97 + displayFile)}</span>}
+        {isValidMove && !piece && <div className="valid-move-dot" />}
+        {isValidMove && piece && <div className="valid-move-capture" />}
+        {piece && renderPiece(piece.color, piece.type)}
+      </div>
+    );
+  };
+
+  const renderBoard = () => (
+    <div className="board">
+      {Array.from({ length: 8 }, (_, rank) =>
+        Array.from({ length: 8 }, (_, file) => renderSquare(rank, file))
+      )}
+    </div>
+  );
+
+  const renderMoveList = () => {
+    const pairs: { num: number; white?: string; black?: string }[] = [];
+    for (let i = 0; i < moveHistory.length; i += 2) {
+      pairs.push({
+        num: Math.floor(i / 2) + 1,
+        white: moveHistory[i],
+        black: moveHistory[i + 1],
+      });
+    }
+
+    return (
+      <div className="move-list" ref={moveListRef}>
+        {pairs.length === 0 && <div className="move-list-empty">No moves yet</div>}
+        {pairs.map(pair => (
+          <div key={pair.num} className="move-pair">
+            <span className="move-num">{pair.num}.</span>
+            <span className="move-white">{pair.white}</span>
+            {pair.black && <span className="move-black">{pair.black}</span>}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderEvalBar = () => {
+    const evaluation = evaluateBoard(game);
+    const clampedEval = Math.max(-2000, Math.min(2000, evaluation));
+    const whitePercent = 50 + (clampedEval / 2000) * 50;
+
+    return (
+      <div className="eval-bar-container">
+        <div className="eval-bar">
+          <div className="eval-bar-white" style={{ height: `${whitePercent}%` }} />
+        </div>
+        <span className="eval-label">
+          {evaluation > 0 ? '+' : ''}{(evaluation / 100).toFixed(1)}
+        </span>
+      </div>
+    );
+  };
+
+  // --- SCREENS ---
+
+  if (phase === 'learn') {
+    return (
+      <div className="app">
+        <Learn onBack={() => setPhase('menu')} />
+      </div>
+    );
+  }
+
+  if (phase === 'menu') {
+    const inProgressGames = savedGames.filter(g => !g.result);
+    const completedGames = savedGames.filter(g => g.result);
+
+    return (
+      <div className="app">
+        <div className="menu-screen">
+          <div className="menu-logo">
+            <span className="menu-icon">
+              <ChessPiece color="w" type="n" className="menu-piece-svg" />
+            </span>
+            <h1>Chess Coach</h1>
+            <p className="menu-subtitle">Play, learn, and improve your chess</p>
+          </div>
+
+          <div className="menu-options">
+            <div className="option-group">
+              <label>Play as</label>
+              <div className="toggle-group">
+                <button
+                  className={playerColor === 'w' ? 'active' : ''}
+                  onClick={() => setPlayerColor('w')}
+                >
+                  <span className="color-icon"><ChessPiece color="w" type="k" className="toggle-piece-svg" /></span> White
+                </button>
+                <button
+                  className={playerColor === 'b' ? 'active' : ''}
+                  onClick={() => setPlayerColor('b')}
+                >
+                  <span className="color-icon"><ChessPiece color="b" type="k" className="toggle-piece-svg" /></span> Black
+                </button>
+              </div>
+            </div>
+
+            <div className="option-group">
+              <label>Difficulty</label>
+              <div className="toggle-group triple">
+                <button className={difficulty === 'easy' ? 'active' : ''} onClick={() => setDifficulty('easy')}>Easy</button>
+                <button className={difficulty === 'medium' ? 'active' : ''} onClick={() => setDifficulty('medium')}>Medium</button>
+                <button className={difficulty === 'hard' ? 'active' : ''} onClick={() => setDifficulty('hard')}>Hard</button>
+              </div>
+            </div>
+
+            <div className="option-group">
+              <label>Hints</label>
+              <div className="toggle-group">
+                <button className={hintsEnabled ? 'active' : ''} onClick={() => setHintsEnabled(true)}>On</button>
+                <button className={!hintsEnabled ? 'active' : ''} onClick={() => setHintsEnabled(false)}>Off</button>
+              </div>
+            </div>
+          </div>
+
+          <button className="btn-primary start-btn" onClick={startGame}>
+            New Game
+          </button>
+          <button className="btn-secondary learn-btn" onClick={() => setPhase('learn')}>
+            Learn Chess
+          </button>
+
+          {/* Saved games */}
+          {inProgressGames.length > 0 && (
+            <div className="saved-games-section">
+              <h3>Continue Playing</h3>
+              <div className="saved-games-list">
+                {inProgressGames.map(g => (
+                  <div key={g.id} className="saved-game-card">
+                    <div className="saved-game-info" onClick={() => resumeGame(g)}>
+                      <div className="saved-game-top">
+                        <span className="saved-game-color">
+                          <ChessPiece color={g.playerColor} type="k" className="saved-piece-svg" />
+                        </span>
+                        <span className="saved-game-diff">{g.difficulty}</span>
+                        <span className="saved-game-moves">{g.moveCount} moves</span>
+                      </div>
+                      <div className="saved-game-bottom">
+                        <span className="saved-game-date" title={formatFullDate(g.date)}>
+                          {formatDate(g.date)}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      className="saved-game-delete"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteGame(g.id); }}
+                      title="Delete game"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {completedGames.length > 0 && (
+            <div className="saved-games-section">
+              <h3>Past Games</h3>
+              <div className="saved-games-list">
+                {completedGames.slice(0, 10).map(g => (
+                  <div key={g.id} className="saved-game-card completed">
+                    <div className="saved-game-info">
+                      <div className="saved-game-top">
+                        <span className="saved-game-color">
+                          <ChessPiece color={g.playerColor} type="k" className="saved-piece-svg" />
+                        </span>
+                        <span className="saved-game-diff">{g.difficulty}</span>
+                        <span className="saved-game-moves">{g.moveCount} moves</span>
+                        <span className="saved-game-result-badge">{g.result}</span>
+                      </div>
+                      <div className="saved-game-bottom">
+                        <span className="saved-game-date" title={formatFullDate(g.date)}>
+                          {formatDate(g.date)}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      className="saved-game-delete"
+                      onClick={(e) => { e.stopPropagation(); handleDeleteGame(g.id); }}
+                      title="Delete game"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'analysis') {
+    const currentAnalysis = analysisData[analysisIndex];
+    if (!currentAnalysis) {
+      return (
+        <div className="app">
+          <div className="analysis-screen">
+            <h2>No moves to analyze</h2>
+            <button className="btn-primary" onClick={() => setPhase('menu')}>Back to Menu</button>
+          </div>
+        </div>
+      );
+    }
+
+    const analysisGame = new Chess();
+    analysisGame.load(currentAnalysis.fen);
+
+    const playerMoves = analysisData.filter(m => m.color === playerColor);
+    const counts = { Excellent: 0, Good: 0, Inaccuracy: 0, Mistake: 0, Blunder: 0 };
+    playerMoves.forEach(m => {
+      const label = m.classification.label as keyof typeof counts;
+      if (label in counts) counts[label]++;
+    });
+
+    return (
+      <div className="app">
+        <div className="analysis-screen">
+          <div className="analysis-header">
+            <h2>Game Analysis</h2>
+            <button className="btn-secondary" onClick={() => setPhase('menu')}>New Game</button>
+          </div>
+
+          <div className="analysis-layout">
+            <div className="analysis-board-section">
+              <div className="board analysis-board">
+                {Array.from({ length: 8 }, (_, rank) =>
+                  Array.from({ length: 8 }, (_, file) => {
+                    const displayRank = flipBoard ? rank : 7 - rank;
+                    const displayFile = flipBoard ? 7 - file : file;
+                    const squareName = `${String.fromCharCode(97 + displayFile)}${displayRank + 1}` as Square;
+                    const isLight = (displayRank + displayFile) % 2 === 1;
+                    const piece = analysisGame.get(squareName);
+                    return (
+                      <div key={squareName} className={`square ${isLight ? 'light' : 'dark'}`}>
+                        {file === 0 && <span className="coord-rank">{displayRank + 1}</span>}
+                        {rank === 7 && <span className="coord-file">{String.fromCharCode(97 + displayFile)}</span>}
+                        {piece && renderPiece(piece.color, piece.type)}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="analysis-nav">
+                <button onClick={() => setAnalysisIndex(0)} disabled={analysisIndex === 0}>&#9664;&#9664;</button>
+                <button onClick={() => setAnalysisIndex(Math.max(0, analysisIndex - 1))} disabled={analysisIndex === 0}>&#9664;</button>
+                <span className="analysis-move-counter">
+                  Move {currentAnalysis.moveNumber} ({currentAnalysis.color === 'w' ? 'White' : 'Black'})
+                </span>
+                <button onClick={() => setAnalysisIndex(Math.min(analysisData.length - 1, analysisIndex + 1))} disabled={analysisIndex === analysisData.length - 1}>&#9654;</button>
+                <button onClick={() => setAnalysisIndex(analysisData.length - 1)} disabled={analysisIndex === analysisData.length - 1}>&#9654;&#9654;</button>
+              </div>
+            </div>
+
+            <div className="analysis-panel">
+              <div className="analysis-move-detail">
+                <div className="analysis-move-san">
+                  {currentAnalysis.moveNumber}.{currentAnalysis.color === 'b' ? '..' : ''} {currentAnalysis.san}
+                </div>
+                <div className="analysis-classification" style={{ background: currentAnalysis.classification.color }}>
+                  {currentAnalysis.classification.label}
+                </div>
+                <p className="analysis-explanation">{currentAnalysis.explanation}</p>
+                {currentAnalysis.bestMoveSan !== currentAnalysis.san && (
+                  <p className="analysis-best">Best move: <strong>{currentAnalysis.bestMoveSan}</strong></p>
+                )}
+                <div className="analysis-eval">
+                  Eval: {currentAnalysis.evaluation > 0 ? '+' : ''}{(currentAnalysis.evaluation / 100).toFixed(1)}
+                </div>
+              </div>
+
+              <div className="analysis-summary">
+                <h3>Your Move Quality</h3>
+                <div className="summary-bars">
+                  {Object.entries(counts).map(([label, count]) => (
+                    <div key={label} className="summary-row">
+                      <span className="summary-label">{label}</span>
+                      <div className="summary-bar-track">
+                        <div
+                          className="summary-bar-fill"
+                          style={{
+                            width: `${playerMoves.length > 0 ? (count / playerMoves.length) * 100 : 0}%`,
+                            background:
+                              label === 'Excellent' ? '#22c55e' :
+                              label === 'Good' ? '#84cc16' :
+                              label === 'Inaccuracy' ? '#eab308' :
+                              label === 'Mistake' ? '#f97316' : '#ef4444',
+                          }}
+                        />
+                      </div>
+                      <span className="summary-count">{count}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="analysis-move-list">
+                <h3>All Moves</h3>
+                <div className="analysis-moves-scroll">
+                  {analysisData.map((m, i) => (
+                    <div
+                      key={i}
+                      className={`analysis-move-item ${i === analysisIndex ? 'active' : ''}`}
+                      onClick={() => setAnalysisIndex(i)}
+                    >
+                      <span className="ami-number">{m.moveNumber}.{m.color === 'b' ? '..' : ''}</span>
+                      <span className="ami-san">{m.san}</span>
+                      <span className="ami-class" style={{ color: m.classification.color }}>
+                        {m.classification.label[0]}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Playing or Game Over screen
+  return (
+    <div className="app">
+      {promotionPending && (
+        <div className="modal-overlay">
+          <div className="promotion-dialog">
+            <h3>Promote pawn to:</h3>
+            <div className="promotion-options">
+              {(['q', 'r', 'b', 'n'] as const).map(p => (
+                <button key={p} onClick={() => handlePromotion(p)} className="promotion-piece">
+                  <ChessPiece color={playerColor} type={p} className="promo-piece-svg" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {phase === 'gameover' && (
+        <div className="modal-overlay">
+          <div className="gameover-dialog">
+            <h2>Game Over</h2>
+            <p className="gameover-result">{gameResult}</p>
+            <div className="gameover-actions">
+              <button className="btn-primary" onClick={startAnalysis} disabled={isAnalyzing}>
+                {isAnalyzing ? 'Analyzing...' : 'Analyze Game'}
+              </button>
+              <button className="btn-secondary" onClick={() => setPhase('menu')}>
+                New Game
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="game-screen">
+        <div className="game-topbar">
+          <div className="topbar-left">
+            <span className="topbar-logo">
+              <ChessPiece color="w" type="n" className="topbar-piece-svg" />
+            </span>
+            <span className="topbar-title">Chess Coach</span>
+          </div>
+          <div className="topbar-right">
+            <button
+              className={`topbar-btn ${hintsEnabled ? 'active' : ''}`}
+              onClick={() => setHintsEnabled(!hintsEnabled)}
+              title="Toggle hints"
+            >
+              {hintsEnabled ? 'Hints: ON' : 'Hints: OFF'}
+            </button>
+            <button className="topbar-btn" onClick={() => setFlipBoard(!flipBoard)} title="Flip board">
+              &#8693;
+            </button>
+            <button className="topbar-btn resign-btn" onClick={resign} title="Resign">
+              Resign
+            </button>
+          </div>
+        </div>
+
+        <div className="game-layout">
+          {renderEvalBar()}
+
+          <div className="board-container">
+            <div className="player-label opponent">
+              <span className="player-icon">
+                <ChessPiece color={playerColor === 'w' ? 'b' : 'w'} type="k" className="label-piece-svg" />
+              </span>
+              <span>Computer ({difficulty})</span>
+              {isThinking && <span className="thinking-indicator">Thinking...</span>}
+            </div>
+
+            {renderBoard()}
+
+            <div className="player-label self">
+              <span className="player-icon">
+                <ChessPiece color={playerColor} type="k" className="label-piece-svg" />
+              </span>
+              <span>You</span>
+            </div>
+          </div>
+
+          <div className="side-panel">
+            {hintsEnabled && game.turn() === playerColor && currentHint && phase === 'playing' && (
+              <div className="hint-section">
+                <h3>Hint</h3>
+                {showHint ? (
+                  <div className="hint-content">
+                    <div className="hint-move">
+                      Try: <strong>{currentHint.move.san}</strong>
+                    </div>
+                    <p className="hint-explanation">{currentHint.explanation}</p>
+                    <button className="btn-small" onClick={() => setShowHint(false)}>Hide</button>
+                  </div>
+                ) : (
+                  <button className="btn-small btn-hint" onClick={() => setShowHint(true)}>
+                    Show hint
+                  </button>
+                )}
+              </div>
+            )}
+
+            <div className="moves-section">
+              <h3>Moves</h3>
+              {renderMoveList()}
+            </div>
+
+            <div className="status-section">
+              {game.inCheck() && phase === 'playing' && (
+                <div className="status-check">Check!</div>
+              )}
+              {game.turn() === playerColor && phase === 'playing' && !isThinking && (
+                <div className="status-turn">Your turn</div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;
