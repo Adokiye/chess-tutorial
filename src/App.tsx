@@ -46,9 +46,22 @@ function App() {
   const [promotionPending, setPromotionPending] = useState<{ from: Square; to: Square } | null>(null);
   const [currentGameId, setCurrentGameId] = useState<string | null>(null);
   const [savedGames, setSavedGames] = useState<SavedGame[]>([]);
+  const [viewingMoveIndex, setViewingMoveIndex] = useState<number | null>(null); // null = live position
   const moveListRef = useRef<HTMLDivElement>(null);
 
   const depthMap: Record<Difficulty, number> = { easy: 1, medium: 3, hard: 4 };
+
+  // Build the board to display: either the live game or a historical position
+  const displayGame = (() => {
+    if (viewingMoveIndex === null) return game;
+    const replay = new Chess();
+    for (let i = 0; i < moveHistory.length && i <= viewingMoveIndex; i++) {
+      replay.move(moveHistory[i]);
+    }
+    return replay;
+  })();
+
+  const isViewingHistory = viewingMoveIndex !== null;
 
   // Load saved games on mount
   useEffect(() => {
@@ -166,6 +179,7 @@ function App() {
     setValidMoves([]);
     setMoveHistory([]);
     setLastMove(null);
+    setViewingMoveIndex(null);
     setCurrentHint(null);
     setShowHint(false);
     setGameResult('');
@@ -186,6 +200,7 @@ function App() {
     setSelectedSquare(null);
     setValidMoves([]);
     setLastMove(null);
+    setViewingMoveIndex(null);
     setCurrentHint(null);
     setShowHint(false);
     setGameResult('');
@@ -200,6 +215,10 @@ function App() {
   };
 
   const handleSquareClick = (square: Square) => {
+    if (isViewingHistory) {
+      setViewingMoveIndex(null); // snap back to live game
+      return;
+    }
     if (phase !== 'playing' || game.turn() !== playerColor || isThinking) return;
 
     const piece = game.get(square);
@@ -294,12 +313,12 @@ function App() {
     const displayFile = flipBoard ? 7 - file : file;
     const squareName = `${String.fromCharCode(97 + displayFile)}${displayRank + 1}` as Square;
     const isLight = (displayRank + displayFile) % 2 === 1;
-    const piece = game.get(squareName);
-    const isSelected = selectedSquare === squareName;
-    const isValidMove = validMoves.includes(squareName);
-    const isLastMoveSquare = lastMove && (lastMove.from === squareName || lastMove.to === squareName);
-    const isHintSquare = showHint && currentHint && (currentHint.move.from === squareName || currentHint.move.to === squareName);
-    const isCheck = piece && piece.type === 'k' && game.inCheck() && piece.color === game.turn();
+    const piece = displayGame.get(squareName);
+    const isSelected = !isViewingHistory && selectedSquare === squareName;
+    const isValidMove = !isViewingHistory && validMoves.includes(squareName);
+    const isLastMoveSquare = !isViewingHistory && lastMove && (lastMove.from === squareName || lastMove.to === squareName);
+    const isHintSquare = !isViewingHistory && showHint && currentHint && (currentHint.move.from === squareName || currentHint.move.to === squareName);
+    const isCheck = piece && piece.type === 'k' && displayGame.inCheck() && piece.color === displayGame.turn();
 
     let className = `square ${isLight ? 'light' : 'dark'}`;
     if (isSelected) className += ' selected';
@@ -331,14 +350,24 @@ function App() {
   );
 
   const renderMoveList = () => {
-    const pairs: { num: number; white?: string; black?: string }[] = [];
+    const pairs: { num: number; white?: string; black?: string; whiteIdx: number; blackIdx?: number }[] = [];
     for (let i = 0; i < moveHistory.length; i += 2) {
       pairs.push({
         num: Math.floor(i / 2) + 1,
         white: moveHistory[i],
         black: moveHistory[i + 1],
+        whiteIdx: i,
+        blackIdx: moveHistory[i + 1] !== undefined ? i + 1 : undefined,
       });
     }
+
+    const handleMoveClick = (idx: number) => {
+      if (viewingMoveIndex === idx) {
+        setViewingMoveIndex(null); // click again to go back to live
+      } else {
+        setViewingMoveIndex(idx);
+      }
+    };
 
     return (
       <div className="move-list" ref={moveListRef}>
@@ -346,10 +375,27 @@ function App() {
         {pairs.map(pair => (
           <div key={pair.num} className="move-pair">
             <span className="move-num">{pair.num}.</span>
-            <span className="move-white">{pair.white}</span>
-            {pair.black && <span className="move-black">{pair.black}</span>}
+            <span
+              className={`move-white clickable ${viewingMoveIndex === pair.whiteIdx ? 'viewing' : ''}`}
+              onClick={() => handleMoveClick(pair.whiteIdx)}
+            >
+              {pair.white}
+            </span>
+            {pair.black && pair.blackIdx !== undefined && (
+              <span
+                className={`move-black clickable ${viewingMoveIndex === pair.blackIdx ? 'viewing' : ''}`}
+                onClick={() => handleMoveClick(pair.blackIdx!)}
+              >
+                {pair.black}
+              </span>
+            )}
           </div>
         ))}
+        {isViewingHistory && (
+          <button className="btn-small btn-back-to-live" onClick={() => setViewingMoveIndex(null)}>
+            Back to current position
+          </button>
+        )}
       </div>
     );
   };
@@ -750,10 +796,16 @@ function App() {
             </div>
 
             <div className="status-section">
-              {game.inCheck() && phase === 'playing' && (
+              {isViewingHistory && (
+                <div className="status-viewing">
+                  Viewing move {Math.floor(viewingMoveIndex! / 2) + 1}{viewingMoveIndex! % 2 === 1 ? '...' : ''}
+                  <button className="btn-small" onClick={() => setViewingMoveIndex(null)}>Back to live</button>
+                </div>
+              )}
+              {!isViewingHistory && game.inCheck() && phase === 'playing' && (
                 <div className="status-check">Check!</div>
               )}
-              {game.turn() === playerColor && phase === 'playing' && !isThinking && (
+              {!isViewingHistory && game.turn() === playerColor && phase === 'playing' && !isThinking && (
                 <div className="status-turn">Your turn</div>
               )}
             </div>

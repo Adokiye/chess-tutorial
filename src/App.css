@@ -578,9 +578,31 @@
   cursor: default;
 }
 
-.move-white:hover,
-.move-black:hover {
+.move-white.clickable,
+.move-black.clickable {
+  cursor: pointer;
+  transition: all 0.1s ease;
+}
+
+.move-white.clickable:hover,
+.move-black.clickable:hover {
   background: #2a2b2f;
+}
+
+.move-white.viewing,
+.move-black.viewing {
+  background: #2d3a2d;
+  color: #c4d8a8;
+  border-radius: 3px;
+}
+
+.btn-back-to-live {
+  margin-top: 0.5rem;
+  width: 100%;
+  text-align: center;
+  background: #2d3a2d;
+  border-color: #7c9a5e;
+  color: #c4d8a8;
 }
 
 .status-section {
@@ -598,6 +620,16 @@
   color: #7c9a5e;
   font-weight: 500;
   font-size: 0.9rem;
+}
+
+.status-viewing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  color: #d4a843;
+  font-weight: 500;
+  font-size: 0.85rem;
 }
 
 /* =============================================
