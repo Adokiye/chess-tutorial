@@ -228,7 +228,7 @@ export function classifyMove(
   return { label: 'Blunder', color: '#ef4444' };
 }
 
-// Generate an explanation for why a move is good
+// Generate a rich explanation for why a move is good
 export function explainMove(move: Move, game: Chess): string {
   const reasons: string[] = [];
   const pieceNames: Record<string, string> = {
@@ -236,64 +236,285 @@ export function explainMove(move: Move, game: Chess): string {
   };
 
   const pieceName = pieceNames[move.piece] || move.piece;
+  const opponentColor = move.color === 'w' ? 'b' : 'w';
 
-  // Capture explanation
-  if (move.captured) {
-    const capturedName = pieceNames[move.captured] || move.captured;
-    reasons.push(`Captures the ${capturedName}, winning material`);
-  }
-
-  // Check if the move gives check
+  // Play the move on a test board
   const testGame = new Chess(game.fen());
   testGame.move(move);
 
+  // Checkmate — nothing else to say
   if (testGame.isCheckmate()) {
-    return 'Checkmate! This move wins the game.';
+    return 'Checkmate! This move wins the game immediately. The opponent\'s king has no escape squares, no piece can block the check, and the checking piece cannot be captured.';
   }
 
+  // --- TACTICAL REASONS ---
+
+  // Capture with value analysis
+  if (move.captured) {
+    const capturedName = pieceNames[move.captured] || move.captured;
+    const capturedVal = PIECE_VALUES[move.captured] || 0;
+    const movingVal = PIECE_VALUES[move.piece] || 0;
+    if (capturedVal > movingVal) {
+      reasons.push(`Captures the ${capturedName} (worth ${capturedVal / 100} points) with a ${pieceName} (worth ${movingVal / 100} points) — a net gain of ${(capturedVal - movingVal) / 100} points of material`);
+    } else if (capturedVal === movingVal) {
+      reasons.push(`Trades your ${pieceName} for the opponent's ${capturedName} — an equal exchange that simplifies the position`);
+    } else {
+      reasons.push(`Captures the ${capturedName}. Although the ${pieceName} is worth more, the resulting position compensates for the material`);
+    }
+  }
+
+  // Check
   if (testGame.inCheck()) {
-    reasons.push('Puts the opponent\'s king in check, forcing a response');
-  }
-
-  // Center control
-  const centralSquares = ['d4', 'd5', 'e4', 'e5'];
-  if (centralSquares.includes(move.to)) {
-    reasons.push(`Moves the ${pieceName} to the center, controlling key squares`);
+    const opponentMoves = testGame.moves().length;
+    if (opponentMoves <= 3) {
+      reasons.push(`Puts the king in check with very limited escape options (only ${opponentMoves} legal response${opponentMoves === 1 ? '' : 's'}), creating strong pressure`);
+    } else {
+      reasons.push('Gives check, forcing the opponent to deal with the threat before doing anything else — this gains you a tempo (free move)');
+    }
   }
 
   // Castling
   if (move.flags.includes('k') || move.flags.includes('q')) {
-    reasons.push('Castles to safety, protecting the king and connecting the rooks');
+    const side = move.flags.includes('k') ? 'kingside' : 'queenside';
+    reasons.push(`Castles ${side}, moving the king to safety behind a wall of pawns. This also activates the rook, connecting it with the other rook along the back rank. Castling early is one of the most important opening principles`);
   }
 
   // Promotion
   if (move.promotion) {
     const promoName = pieceNames[move.promotion] || move.promotion;
-    reasons.push(`Promotes the pawn to a ${promoName}, gaining a powerful piece`);
+    reasons.push(`Promotes the pawn to a ${promoName}! A pawn reaching the back rank becomes one of the most powerful pieces on the board — this is often game-deciding`);
+  }
+
+  // --- POSITIONAL REASONS ---
+
+  // Center control
+  const centralSquares = ['d4', 'd5', 'e4', 'e5'];
+  const extendedCenter = ['c3', 'c4', 'c5', 'c6', 'd3', 'd6', 'e3', 'e6', 'f3', 'f4', 'f5', 'f6'];
+  if (centralSquares.includes(move.to)) {
+    if (move.piece === 'p') {
+      reasons.push(`Places a pawn in the center of the board. Central pawns control key squares and restrict the opponent's piece movement. A strong center is the foundation of a good position`);
+    } else if (move.piece === 'n') {
+      reasons.push(`Places the knight on a powerful central square where it controls up to 8 squares. Knights are strongest in the center — "a knight on the rim is dim" as the saying goes`);
+    } else {
+      reasons.push(`Occupies a strong central square with the ${pieceName}, where it exerts maximum influence across the board`);
+    }
+  } else if (extendedCenter.includes(move.to)) {
+    reasons.push(`Moves the ${pieceName} to the extended center, supporting control of the key central squares (d4, d5, e4, e5)`);
   }
 
   // Development (moving piece from back rank)
   const backRank = move.color === 'w' ? '1' : '8';
   if (move.from[1] === backRank && move.piece !== 'p' && move.piece !== 'k') {
-    reasons.push(`Develops the ${pieceName}, bringing it into the game`);
+    const developedCount = countDevelopedPieces(game, move.color);
+    if (developedCount <= 2) {
+      reasons.push(`Develops the ${pieceName} from its starting square — getting pieces into the game quickly is critical in the opening. You should aim to develop all minor pieces (knights and bishops) before launching any attacks`);
+    } else {
+      reasons.push(`Brings the ${pieceName} into play. With most pieces already developed, you're building a well-coordinated army`);
+    }
   }
 
-  // If no specific reason found, give a general positional explanation
+  // Fianchetto (bishop to g2, b2, g7, b7)
+  if (move.piece === 'b' && ['g2', 'b2', 'g7', 'b7'].includes(move.to)) {
+    reasons.push(`Fianchettoes the bishop on the long diagonal. From here, the bishop has a powerful long-range view across the board, often targeting the opponent's kingside or center`);
+  }
+
+  // Piece moving to an outpost (square protected by own pawn, can't be attacked by enemy pawn)
+  if (move.piece === 'n' && !centralSquares.includes(move.to)) {
+    if (isOutpost(game, move.to, move.color)) {
+      reasons.push(`Places the knight on an outpost — a square protected by your pawns where it can't be chased away by enemy pawns. An outpost knight is a powerful positional asset`);
+    }
+  }
+
+  // Rook to open or semi-open file
+  if (move.piece === 'r') {
+    const file = move.to[0];
+    const fileStatus = getFileStatus(game, file, move.color);
+    if (fileStatus === 'open') {
+      reasons.push(`Places the rook on an open file (no pawns blocking it). Rooks are most effective on open files where they can penetrate deep into the opponent's position`);
+    } else if (fileStatus === 'semi-open') {
+      reasons.push(`Places the rook on a semi-open file, where it pressures the opponent's pawn and can potentially break through`);
+    }
+    // Rook on 7th rank
+    const seventhRank = move.color === 'w' ? '7' : '2';
+    if (move.to[1] === seventhRank) {
+      reasons.push(`The rook reaches the ${seventhRank === '7' ? '7th' : '2nd'} rank — often called "a pig on the 7th." From here it attacks pawns and restricts the enemy king to the back rank`);
+    }
+  }
+
+  // Pawn structure considerations
+  if (move.piece === 'p') {
+    // Pawn advance creating passed pawn
+    if (isPassedPawn(testGame, move.to, move.color)) {
+      reasons.push(`Creates a passed pawn — a pawn with no enemy pawns that can block or capture it on its way to promotion. Passed pawns are extremely dangerous, especially in endgames`);
+    }
+    // Pawn chain support
+    const file = move.to.charCodeAt(0) - 97;
+    const rank = parseInt(move.to[1]);
+    const supportRank = move.color === 'w' ? rank - 1 : rank + 1;
+    const leftFile = String.fromCharCode(96 + file);
+    const rightFile = String.fromCharCode(98 + file);
+    const leftSupport = leftFile >= 'a' && leftFile <= 'h' ? game.get(`${leftFile}${supportRank}` as Square) : null;
+    const rightSupport = rightFile >= 'a' && rightFile <= 'h' ? game.get(`${rightFile}${supportRank}` as Square) : null;
+    if ((leftSupport && leftSupport.type === 'p' && leftSupport.color === move.color) ||
+        (rightSupport && rightSupport.type === 'p' && rightSupport.color === move.color)) {
+      reasons.push(`This pawn is supported by a neighboring pawn, creating a strong connected pawn chain that's difficult for the opponent to break`);
+    }
+  }
+
+  // Queen activity (but warn about early queen moves)
+  if (move.piece === 'q') {
+    const moveNum = Math.ceil(game.moveNumber());
+    if (moveNum <= 6) {
+      reasons.push(`Moves the queen early in the game. While the queen is the most powerful piece, be careful — early queen moves can lose tempo if the opponent attacks it with developing moves`);
+    }
+  }
+
+  // Threatening opponent pieces after the move
+  const threatsAfter = countThreats(testGame, move.color);
+  const threatsBefore = countThreats(game, move.color);
+  if (threatsAfter > threatsBefore && !move.captured && !testGame.inCheck()) {
+    const newThreats = threatsAfter - threatsBefore;
+    if (newThreats >= 2) {
+      reasons.push(`Creates multiple new threats that the opponent must address, putting them on the defensive`);
+    } else {
+      reasons.push(`Creates a new threat, forcing the opponent to respond defensively`);
+    }
+  }
+
+  // Restricting opponent's mobility
+  const opponentMobilityBefore = game.moves().length;
+  // Switch perspective for opponent mobility after
+  const opponentMobilityAfter = testGame.moves().length;
+  if (opponentMobilityAfter < opponentMobilityBefore * 0.7 && opponentMobilityBefore > 10) {
+    reasons.push(`Significantly restricts the opponent's options — they now have fewer good moves available. Limiting your opponent's mobility is a key strategic concept`);
+  }
+
+  // --- EVAL-BASED FALLBACK (enriched) ---
   if (reasons.length === 0) {
     const evalBefore = evaluateBoard(game);
     const evalAfter = evaluateBoard(testGame);
     const improvement = move.color === 'w' ? evalAfter - evalBefore : evalBefore - evalAfter;
 
-    if (improvement > 50) {
-      reasons.push(`Improves your position significantly`);
+    if (improvement > 100) {
+      reasons.push(`Significantly improves your position. The ${pieceName} is much more active on ${move.to} than it was on ${move.from}`);
+    } else if (improvement > 30) {
+      reasons.push(`A good improving move. The ${pieceName} on ${move.to} has better scope and activity than on ${move.from}, giving you a slight edge`);
     } else if (improvement > 0) {
-      reasons.push(`A solid move that slightly improves your position`);
+      reasons.push(`A solid positional move. The ${pieceName} moves to a slightly better square, keeping your position healthy`);
     } else {
-      reasons.push(`Maintains a stable position`);
+      // Even when eval is flat, explain what the move does
+      if (move.piece === 'n' || move.piece === 'b') {
+        reasons.push(`Repositions the ${pieceName} to ${move.to}. While the evaluation stays roughly equal, finding the best squares for your pieces is the essence of good positional play. Look for squares where the ${pieceName} is active, protected, and hard to dislodge`);
+      } else if (move.piece === 'p') {
+        reasons.push(`Advances the pawn to ${move.to}, gaining space and potentially opening lines for your pieces. Pawn moves are permanent (pawns can't go backward), so each one shapes the character of the position`);
+      } else if (move.piece === 'r') {
+        reasons.push(`Repositions the rook to ${move.to}, seeking an open file or preparing to double rooks. Rooks need open lines to be effective — look for files without pawns blocking them`);
+      } else if (move.piece === 'q') {
+        reasons.push(`Repositions the queen to ${move.to}. The queen is versatile but vulnerable to attack — place it where it's active but not easily harassed by enemy minor pieces`);
+      } else {
+        reasons.push(`Moves the ${pieceName} to ${move.to}, maintaining balance. In equal positions, focus on improving your worst-placed piece and creating small advantages that can accumulate over time`);
+      }
+    }
+  }
+
+  // Add strategic context based on game phase
+  const moveNum = Math.ceil(game.moveNumber());
+  if (reasons.length <= 2) {
+    if (moveNum <= 10) {
+      reasons.push('In the opening, prioritize: 1) controlling the center, 2) developing pieces, and 3) castling your king to safety');
+    } else if (moveNum <= 25) {
+      reasons.push('In the middlegame, look for tactical opportunities while improving the placement of your pieces. Ask yourself: what is my worst-placed piece, and how can I improve it?');
+    } else {
+      reasons.push('In the endgame, activate your king (it becomes a fighting piece!) and push passed pawns. Every tempo counts');
     }
   }
 
   return reasons.join('. ') + '.';
+}
+
+// --- Helper functions for explainMove ---
+
+function countDevelopedPieces(game: Chess, color: 'w' | 'b'): number {
+  const backRank = color === 'w' ? '1' : '8';
+  let developed = 0;
+  const board = game.board();
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const piece = board[r][f];
+      if (piece && piece.color === color && piece.type !== 'p' && piece.type !== 'k' && piece.type !== 'r') {
+        const rank = String(8 - r);
+        if (rank !== backRank) developed++;
+      }
+    }
+  }
+  return developed;
+}
+
+function isOutpost(game: Chess, square: string, color: 'w' | 'b'): boolean {
+  const file = square.charCodeAt(0) - 97;
+  const rank = parseInt(square[1]);
+  const enemyPawnDir = color === 'w' ? 1 : -1;
+  // Check if enemy pawns can attack this square
+  for (let r = rank; r >= 1 && r <= 8; r += enemyPawnDir) {
+    for (const df of [-1, 1]) {
+      const f = file + df;
+      if (f < 0 || f > 7) continue;
+      const sq = `${String.fromCharCode(97 + f)}${r}` as Square;
+      const piece = game.get(sq);
+      if (piece && piece.type === 'p' && piece.color !== color) return false;
+    }
+  }
+  return true;
+}
+
+function getFileStatus(game: Chess, file: string, color: 'w' | 'b'): 'open' | 'semi-open' | 'closed' {
+  let ownPawn = false;
+  let enemyPawn = false;
+  for (let rank = 1; rank <= 8; rank++) {
+    const sq = `${file}${rank}` as Square;
+    const piece = game.get(sq);
+    if (piece && piece.type === 'p') {
+      if (piece.color === color) ownPawn = true;
+      else enemyPawn = true;
+    }
+  }
+  if (!ownPawn && !enemyPawn) return 'open';
+  if (!ownPawn && enemyPawn) return 'semi-open';
+  return 'closed';
+}
+
+function isPassedPawn(game: Chess, square: string, color: 'w' | 'b'): boolean {
+  const file = square.charCodeAt(0) - 97;
+  const rank = parseInt(square[1]);
+  const direction = color === 'w' ? 1 : -1;
+  const endRank = color === 'w' ? 8 : 1;
+  for (let r = rank + direction; color === 'w' ? r <= endRank : r >= endRank; r += direction) {
+    for (const df of [-1, 0, 1]) {
+      const f = file + df;
+      if (f < 0 || f > 7) continue;
+      const sq = `${String.fromCharCode(97 + f)}${r}` as Square;
+      const piece = game.get(sq);
+      if (piece && piece.type === 'p' && piece.color !== color) return false;
+    }
+  }
+  return true;
+}
+
+function countThreats(game: Chess, color: 'w' | 'b'): number {
+  // Count how many opponent pieces are attacked
+  let threats = 0;
+  const board = game.board();
+  const opponentColor = color === 'w' ? 'b' : 'w';
+  for (let r = 0; r < 8; r++) {
+    for (let f = 0; f < 8; f++) {
+      const piece = board[r][f];
+      if (piece && piece.color === opponentColor && piece.type !== 'k') {
+        const sq = `${String.fromCharCode(97 + f)}${8 - r}` as Square;
+        if (game.isAttacked(sq, color)) threats++;
+      }
+    }
+  }
+  return threats;
 }
 
 // Analyze a completed game move by move
