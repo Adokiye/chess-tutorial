@@ -236,7 +236,6 @@ export function explainMove(move: Move, game: Chess): string {
   };
 
   const pieceName = pieceNames[move.piece] || move.piece;
-  const opponentColor = move.color === 'w' ? 'b' : 'w';
 
   // Play the move on a test board
   const testGame = new Chess(game.fen());
