@@ -83,7 +83,9 @@ function App() {
 
   const { computeMove } = useEngineWorker();
 
-  const depthMap: Record<Difficulty, number> = { beginner: 1, easy: 2, medium: 3, hard: 4, expert: 5, master: 6 };
+  // Depth 5+ is very slow with pure minimax — cap at 4 for playability
+  // Higher difficulties use depth 4 but with less randomness (more precise play)
+  const depthMap: Record<Difficulty, number> = { beginner: 1, easy: 2, medium: 3, hard: 4, expert: 4, master: 4 };
 
   // Hash-based routing: sync phase to URL
   useEffect(() => {
