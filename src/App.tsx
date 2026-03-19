@@ -1,10 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Chess, type Square } from 'chess.js';
 import {
-  getEnhancedHint,
   getValidMoves,
-  analyzeGame,
-  evaluateBoard,
   type MoveAnalysis,
   type EnhancedHint,
 } from './engine';
@@ -64,6 +61,7 @@ function App() {
   const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null);
   const [gameResult, setGameResult] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [currentEval, setCurrentEval] = useState(0);
   const [flipBoard, setFlipBoard] = useState(false);
   const [promotionPending, setPromotionPending] = useState<{ from: Square; to: Square } | null>(null);
   const [currentGameId, setCurrentGameId] = useState<string | null>(null);
@@ -82,7 +80,7 @@ function App() {
   const clockRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const moveListRef = useRef<HTMLDivElement>(null);
 
-  const { computeMove } = useEngineWorker();
+  const { computeMove, computeHint, computeAnalysis, computeEval } = useEngineWorker();
 
   // Depth 5+ is very slow with pure minimax — cap at 4 for playability
   // Higher difficulties use depth 4 but with less randomness (more precise play)
@@ -256,22 +254,29 @@ function App() {
     }
   }, [moveHistory]);
 
-  // Update hint when it's the player's turn (async to avoid blocking UI)
+  // Update hint when it's the player's turn (runs in worker)
   useEffect(() => {
     if (phase === 'playing' && hintsEnabled && game.turn() === playerColor && !game.isGameOver()) {
       let cancelled = false;
-      // Defer hint computation so the board renders first
-      const id = requestIdleCallback(() => {
-        if (cancelled) return;
-        const hint = getEnhancedHint(game, playerColor);
+      computeHint(game.fen(), playerColor).then(hint => {
         if (!cancelled) setCurrentHint(hint);
       });
-      return () => { cancelled = true; cancelIdleCallback(id); };
+      return () => { cancelled = true; };
     } else {
       setCurrentHint(null);
       setShowHint(false);
     }
-  }, [game, phase, hintsEnabled, playerColor]);
+  }, [game, phase, hintsEnabled, playerColor, computeHint]);
+
+  // Update eval bar in worker
+  useEffect(() => {
+    if (phase !== 'playing' && phase !== 'gameover') return;
+    let cancelled = false;
+    computeEval(game.fen()).then(val => {
+      if (!cancelled) setCurrentEval(val);
+    });
+    return () => { cancelled = true; };
+  }, [game, phase, computeEval]);
 
   // Make AI move (runs in Web Worker — non-blocking)
   const makeAiMove = useCallback(() => {
@@ -511,7 +516,7 @@ function App() {
     setIsAnalyzing(true);
     setAnalysisProgress(0);
     const pgn = game.pgn();
-    analyzeGame(pgn, (pct) => setAnalysisProgress(pct)).then(data => {
+    computeAnalysis(pgn, (pct: number) => setAnalysisProgress(pct)).then((data: MoveAnalysis[]) => {
       setAnalysisData(data);
       setAnalysisIndex(0);
       setIsAnalyzing(false);
