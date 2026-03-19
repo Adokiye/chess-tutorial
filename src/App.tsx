@@ -255,11 +255,17 @@ function App() {
     }
   }, [moveHistory]);
 
-  // Update hint when it's the player's turn
+  // Update hint when it's the player's turn (async to avoid blocking UI)
   useEffect(() => {
     if (phase === 'playing' && hintsEnabled && game.turn() === playerColor && !game.isGameOver()) {
-      const hint = getEnhancedHint(game, playerColor);
-      setCurrentHint(hint);
+      let cancelled = false;
+      // Defer hint computation so the board renders first
+      const id = requestIdleCallback(() => {
+        if (cancelled) return;
+        const hint = getEnhancedHint(game, playerColor);
+        if (!cancelled) setCurrentHint(hint);
+      });
+      return () => { cancelled = true; cancelIdleCallback(id); };
     } else {
       setCurrentHint(null);
       setShowHint(false);
