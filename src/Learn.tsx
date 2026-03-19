@@ -19,12 +19,34 @@ interface LearnProps {
   onBack: () => void;
 }
 
+// Parse FEN into a board array without chess.js validation
+// This handles display-only positions (e.g. lone pieces without kings)
+function parseFenBoard(fen: string): ({ color: string; type: string } | null)[][] {
+  const boardPart = fen.split(' ')[0];
+  const rows = boardPart.split('/');
+  const board: ({ color: string; type: string } | null)[][] = [];
+  for (const row of rows) {
+    const boardRow: ({ color: string; type: string } | null)[] = [];
+    for (const ch of row) {
+      if (ch >= '1' && ch <= '8') {
+        for (let i = 0; i < parseInt(ch); i++) boardRow.push(null);
+      } else {
+        const color = ch === ch.toUpperCase() ? 'w' : 'b';
+        const type = ch.toLowerCase();
+        boardRow.push({ color, type });
+      }
+    }
+    board.push(boardRow);
+  }
+  return board;
+}
+
 function MiniBoard({ fen }: { fen: string }) {
-  let game: Chess;
+  let board: ({ color: string; type: string } | null)[][];
   try {
-    game = new Chess(fen);
+    board = parseFenBoard(fen);
   } catch {
-    return <div className="mini-board" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717a', fontSize: '0.8rem' }}>Invalid position</div>;
+    return <div className="mini-board" />;
   }
 
   return (
@@ -33,11 +55,10 @@ function MiniBoard({ fen }: { fen: string }) {
         Array.from({ length: 8 }, (_, file) => {
           const displayRank = 7 - rank;
           const displayFile = file;
-          const squareName = `${String.fromCharCode(97 + displayFile)}${displayRank + 1}` as Square;
           const isLight = (displayRank + displayFile) % 2 === 1;
-          const piece = game.get(squareName);
+          const piece = board[7 - displayRank]?.[displayFile] ?? null;
           return (
-            <div key={squareName} className={`mini-square ${isLight ? 'light' : 'dark'}`}>
+            <div key={`${displayFile}-${displayRank}`} className={`mini-square ${isLight ? 'light' : 'dark'}`}>
               {piece && (
                 <ChessPiece color={piece.color} type={piece.type} className="mini-piece-svg" />
               )}
@@ -240,13 +261,7 @@ function LessonViewer({ lesson, onBack }: { lesson: Lesson; onBack: () => void }
                     ))}
                   </div>
                 )}
-                {block.fen && (() => {
-                  try {
-                    return <MiniBoard fen={block.fen} />;
-                  } catch {
-                    return null;
-                  }
-                })()}
+                {block.fen && <MiniBoard fen={block.fen} />}
               </div>
             );
           }
