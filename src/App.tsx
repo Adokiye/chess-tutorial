@@ -718,7 +718,7 @@ function App() {
   };
 
   const renderEvalBar = () => {
-    const evaluation = evaluateBoard(game);
+    const evaluation = currentEval;
     const clampedEval = Math.max(-2000, Math.min(2000, evaluation));
     const whitePercent = 50 + (clampedEval / 2000) * 50;
 
