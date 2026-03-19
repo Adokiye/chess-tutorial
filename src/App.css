@@ -2283,21 +2283,24 @@
   /* Horizontal eval bar on mobile */
   .eval-bar-container {
     flex-direction: row;
+    align-items: center;
     width: 100%;
     max-width: 480px;
     order: -1;
+    gap: 0.4rem;
+    padding: 0 1rem;
   }
 
   .eval-bar {
     width: 100%;
-    height: 16px;
-    flex-direction: row;
+    height: 16px !important;
+    flex-direction: row !important;
     border-radius: 8px;
   }
 
   .eval-bar-white {
     height: 100% !important;
-    width: var(--eval-pct, 50%);
+    width: var(--eval-pct, 50%) !important;
     transition: width 0.3s ease;
     border-radius: 8px 0 0 8px;
   }
