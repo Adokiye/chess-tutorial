@@ -117,7 +117,46 @@ export function evaluateBoard(game: Chess): number {
   return score;
 }
 
-// Minimax with alpha-beta pruning
+// Transposition table for caching evaluated positions
+const TT_SIZE = 1 << 18; // 262144 entries
+const TT_EXACT = 0, TT_ALPHA = 1, TT_BETA = 2;
+interface TTEntry { key: string; depth: number; score: number; flag: number; }
+const ttable: (TTEntry | null)[] = new Array(TT_SIZE).fill(null);
+
+function ttHash(fen: string): number {
+  let h = 0;
+  for (let i = 0; i < fen.length; i++) {
+    h = ((h << 5) - h + fen.charCodeAt(i)) | 0;
+  }
+  return (h & 0x7fffffff) % TT_SIZE;
+}
+
+// Quiescence search: resolve captures so we don't misevaluate tactical positions
+function quiescence(game: Chess, alpha: number, beta: number, maxQDepth: number): number {
+  const standPat = evaluateBoard(game);
+  if (maxQDepth <= 0) return standPat;
+  if (standPat >= beta) return beta;
+  if (standPat > alpha) alpha = standPat;
+
+  const captures = game.moves({ verbose: true }).filter(m => m.captured);
+  // MVV-LVA ordering
+  captures.sort((a, b) => {
+    const aVal = (PIECE_VALUES[a.captured!] || 0) - (PIECE_VALUES[a.piece] || 0);
+    const bVal = (PIECE_VALUES[b.captured!] || 0) - (PIECE_VALUES[b.piece] || 0);
+    return bVal - aVal;
+  });
+
+  for (const move of captures) {
+    game.move(move);
+    const score = -quiescence(game, -beta, -alpha, maxQDepth - 1);
+    game.undo();
+    if (score >= beta) return beta;
+    if (score > alpha) alpha = score;
+  }
+  return alpha;
+}
+
+// Minimax with alpha-beta pruning, transposition table, and quiescence search
 function minimax(
   game: Chess,
   depth: number,
@@ -126,42 +165,64 @@ function minimax(
   isMaximizing: boolean
 ): number {
   if (depth === 0 || game.isGameOver()) {
+    if (depth === 0 && !game.isGameOver()) {
+      // Use quiescence search at leaf nodes
+      const qScore = quiescence(game, -99999, 99999, 4);
+      return qScore;
+    }
     return evaluateBoard(game);
+  }
+
+  // Transposition table lookup
+  const fenKey = game.fen();
+  const ttIdx = ttHash(fenKey);
+  const ttEntry = ttable[ttIdx];
+  if (ttEntry && ttEntry.key === fenKey && ttEntry.depth >= depth) {
+    if (ttEntry.flag === TT_EXACT) return ttEntry.score;
+    if (ttEntry.flag === TT_ALPHA && ttEntry.score <= alpha) return alpha;
+    if (ttEntry.flag === TT_BETA && ttEntry.score >= beta) return beta;
   }
 
   const moves = game.moves({ verbose: true });
 
-  // Move ordering: captures first, then checks
+  // Better move ordering: captures (MVV-LVA), checks, center moves, then rest
   moves.sort((a, b) => {
     let scoreA = 0, scoreB = 0;
-    if (a.captured) scoreA += PIECE_VALUES[a.captured] * 10;
-    if (b.captured) scoreB += PIECE_VALUES[b.captured] * 10;
+    if (a.captured) scoreA += (PIECE_VALUES[a.captured] || 0) * 10 - (PIECE_VALUES[a.piece] || 0);
+    if (b.captured) scoreB += (PIECE_VALUES[b.captured] || 0) * 10 - (PIECE_VALUES[b.piece] || 0);
+    // Promotion bonus
+    if (a.promotion) scoreA += 8000;
+    if (b.promotion) scoreB += 8000;
+    // Center moves
+    const center = ['d4','d5','e4','e5'];
+    if (center.includes(a.to)) scoreA += 30;
+    if (center.includes(b.to)) scoreB += 30;
     return scoreB - scoreA;
   });
 
-  if (isMaximizing) {
-    let maxEval = -Infinity;
-    for (const move of moves) {
-      game.move(move);
-      const evaluation = minimax(game, depth - 1, alpha, beta, false);
-      game.undo();
-      maxEval = Math.max(maxEval, evaluation);
-      alpha = Math.max(alpha, evaluation);
-      if (beta <= alpha) break;
+  let bestScore = isMaximizing ? -Infinity : Infinity;
+  let ttFlag = isMaximizing ? TT_ALPHA : TT_BETA;
+
+  for (const move of moves) {
+    game.move(move);
+    const evaluation = minimax(game, depth - 1, alpha, beta, !isMaximizing);
+    game.undo();
+
+    if (isMaximizing) {
+      if (evaluation > bestScore) bestScore = evaluation;
+      if (bestScore > alpha) { alpha = bestScore; ttFlag = TT_EXACT; }
+      if (beta <= alpha) { ttFlag = TT_BETA; break; }
+    } else {
+      if (evaluation < bestScore) bestScore = evaluation;
+      if (bestScore < beta) { beta = bestScore; ttFlag = TT_EXACT; }
+      if (beta <= alpha) { ttFlag = TT_ALPHA; break; }
     }
-    return maxEval;
-  } else {
-    let minEval = Infinity;
-    for (const move of moves) {
-      game.move(move);
-      const evaluation = minimax(game, depth - 1, alpha, beta, true);
-      game.undo();
-      minEval = Math.min(minEval, evaluation);
-      beta = Math.min(beta, evaluation);
-      if (beta <= alpha) break;
-    }
-    return minEval;
   }
+
+  // Store in transposition table
+  ttable[ttIdx] = { key: fenKey, depth, score: bestScore, flag: ttFlag };
+
+  return bestScore;
 }
 
 export interface ScoredMove {
