@@ -1590,6 +1590,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.2rem;
+  overflow-x: hidden;
 }
 
 .lesson-block p {
@@ -1611,6 +1612,7 @@
   padding: 1rem;
   background: #1e1f22;
   border-radius: 10px;
+  overflow: hidden;
 }
 
 .diagram-caption {
@@ -1872,11 +1874,12 @@
 .mini-board {
   display: grid;
   grid-template-columns: repeat(8, 1fr);
-  width: 280px;
-  height: 280px;
+  width: min(280px, 80vw);
+  height: min(280px, 80vw);
   border-radius: 4px;
   overflow: hidden;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
 }
 
 .mini-square {

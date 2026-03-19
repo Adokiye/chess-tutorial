@@ -20,7 +20,12 @@ interface LearnProps {
 }
 
 function MiniBoard({ fen }: { fen: string }) {
-  const game = new Chess(fen);
+  let game: Chess;
+  try {
+    game = new Chess(fen);
+  } catch {
+    return <div className="mini-board" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#71717a', fontSize: '0.8rem' }}>Invalid position</div>;
+  }
 
   return (
     <div className="mini-board">

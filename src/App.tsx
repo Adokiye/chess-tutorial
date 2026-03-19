@@ -393,7 +393,7 @@ function App() {
     setGame(newGame);
     setCurrentGameId(saved.id);
     setPlayerColor(saved.playerColor);
-    setDifficulty(saved.difficulty);
+    setDifficulty(saved.difficulty as Difficulty);
     setHintsEnabled(saved.hintsEnabled);
     setMoveHistory(saved.moveHistory);
     setSelectedSquare(null);
