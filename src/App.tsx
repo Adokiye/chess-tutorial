@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Chess, type Square } from 'chess.js';
 import {
-  getBestMove,
   getEnhancedHint,
   getValidMoves,
   analyzeGame,
@@ -9,8 +8,9 @@ import {
   type MoveAnalysis,
   type EnhancedHint,
 } from './engine';
+import { useEngineWorker } from './useEngineWorker';
 import { ChessPiece } from './pieces';
-import { playMoveSound, playCaptureSound, playCheckSound, playCastleSound, playGameOverSound } from './sounds';
+import { playMoveSound, playCaptureSound, playCheckSound, playCastleSound, playGameOverSound, unlockAudio } from './sounds';
 import {
   saveGame,
   loadGames,
@@ -27,8 +27,24 @@ import Learn from './Learn';
 import './App.css';
 
 type GamePhase = 'menu' | 'playing' | 'gameover' | 'analysis' | 'learn';
-type Difficulty = 'easy' | 'medium' | 'hard';
+type Difficulty = 'beginner' | 'easy' | 'medium' | 'hard' | 'expert' | 'master';
 type PlayerColor = 'w' | 'b';
+type TimeControl = 0 | 60 | 180 | 300 | 600 | 900; // 0 = unlimited, seconds
+
+const TIME_LABELS: Record<TimeControl, string> = {
+  0: 'Unlimited',
+  60: '1 min',
+  180: '3 min',
+  300: '5 min',
+  600: '10 min',
+  900: '15 min',
+};
+
+function formatClock(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
 
 function App() {
   const [game, setGame] = useState(new Chess());
@@ -53,13 +69,53 @@ function App() {
   const [savedGames, setSavedGames] = useState<SavedGame[]>([]);
   const [playerStats, setPlayerStats] = useState<PlayerStats>(getPlayerStats());
   const [lastEloChange, setLastEloChange] = useState<number | null>(null);
-  const [viewingMoveIndex, setViewingMoveIndex] = useState<number | null>(null); // null = live position
+  const [viewingMoveIndex, setViewingMoveIndex] = useState<number | null>(null);
   const [confirmingResign, setConfirmingResign] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [premove, setPremove] = useState<{ from: Square; to: Square; promotion?: string } | null>(null);
+  // Clock state
+  const [timeControl, setTimeControl] = useState<TimeControl>(0);
+  const [playerTime, setPlayerTime] = useState(0);
+  const [opponentTime, setOpponentTime] = useState(0);
+  const clockRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const moveListRef = useRef<HTMLDivElement>(null);
 
-  const depthMap: Record<Difficulty, number> = { easy: 1, medium: 3, hard: 4 };
+  const { computeMove } = useEngineWorker();
+
+  const depthMap: Record<Difficulty, number> = { beginner: 1, easy: 2, medium: 3, hard: 4, expert: 5, master: 6 };
+
+  // Hash-based routing: sync phase to URL
+  useEffect(() => {
+    const hashMap: Record<GamePhase, string> = {
+      menu: '#/',
+      playing: '#/play',
+      gameover: '#/gameover',
+      analysis: '#/analysis',
+      learn: '#/learn',
+    };
+    const currentHash = hashMap[phase] || '#/';
+    if (window.location.hash !== currentHash) {
+      window.history.pushState(null, '', currentHash);
+    }
+  }, [phase]);
+
+  // Listen for browser back/forward
+  useEffect(() => {
+    const onHashChange = () => {
+      const hash = window.location.hash;
+      if (hash === '#/' || hash === '' || hash === '#') {
+        if (phase !== 'menu' && phase !== 'playing') setPhase('menu');
+      } else if (hash === '#/learn') {
+        setPhase('learn');
+      }
+    };
+    window.addEventListener('hashchange', onHashChange);
+    // On mount, check if we should start on learn
+    const hash = window.location.hash;
+    if (hash === '#/learn') setPhase('learn');
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, [phase]);
 
   // Play appropriate sound for a chess move
   const playSound = useCallback((san: string, captured: boolean, isCastle: boolean) => {
@@ -121,6 +177,56 @@ function App() {
     setSavedGames(loadGames());
   }, []);
 
+  // Clock tick
+  useEffect(() => {
+    if (phase !== 'playing' || timeControl === 0 || game.isGameOver()) {
+      if (clockRef.current) clearInterval(clockRef.current);
+      return;
+    }
+    clockRef.current = setInterval(() => {
+      const isPlayerTurn = game.turn() === playerColor;
+      if (isPlayerTurn) {
+        setPlayerTime(prev => {
+          if (prev <= 1) {
+            // Player ran out of time
+            clearInterval(clockRef.current!);
+            return 0;
+          }
+          return prev - 1;
+        });
+      } else {
+        setOpponentTime(prev => {
+          if (prev <= 1) {
+            clearInterval(clockRef.current!);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }
+    }, 1000);
+    return () => { if (clockRef.current) clearInterval(clockRef.current); };
+  }, [phase, timeControl, game, playerColor]);
+
+  // Handle time-out
+  useEffect(() => {
+    if (phase !== 'playing' || timeControl === 0) return;
+    if (playerTime === 0 && moveHistory.length > 0) {
+      setGameResult('You lost on time.');
+      if (soundEnabled) playGameOverSound(false);
+      const { stats, eloChange } = updateStatsAfterGame('loss', difficulty, moveHistory.length);
+      setPlayerStats(stats);
+      setLastEloChange(eloChange);
+      setPhase('gameover');
+    } else if (opponentTime === 0 && moveHistory.length > 0) {
+      setGameResult('You won on time!');
+      if (soundEnabled) playGameOverSound(true);
+      const { stats, eloChange } = updateStatsAfterGame('win', difficulty, moveHistory.length);
+      setPlayerStats(stats);
+      setLastEloChange(eloChange);
+      setPhase('gameover');
+    }
+  }, [playerTime, opponentTime, phase, timeControl, moveHistory.length, soundEnabled, difficulty]);
+
   // Auto-save game after each move
   useEffect(() => {
     if (phase === 'playing' && currentGameId && moveHistory.length > 0) {
@@ -158,27 +264,48 @@ function App() {
     }
   }, [game, phase, hintsEnabled, playerColor]);
 
-  // Make AI move
+  // Make AI move (runs in Web Worker — non-blocking)
   const makeAiMove = useCallback(() => {
     if (game.isGameOver()) return;
 
     setIsThinking(true);
-    setTimeout(() => {
-      const newGame = new Chess(game.fen());
-      const depth = depthMap[difficulty];
-      const result = getBestMove(newGame, depth);
+    const depth = depthMap[difficulty];
 
+    computeMove(game.fen(), depth).then((result) => {
       if (result) {
-        const m = result.move;
-        newGame.move(m);
-        setLastMove({ from: m.from as Square, to: m.to as Square });
-        setMoveHistory(prev => [...prev, m.san]);
-        setGame(newGame);
-        playSound(m.san, !!m.captured, m.flags.includes('k') || m.flags.includes('q'));
+        const newGame = new Chess(game.fen());
+        const m = newGame.move(result.move);
+        if (m) {
+          setLastMove({ from: m.from as Square, to: m.to as Square });
+          setMoveHistory(prev => [...prev, m.san]);
+          setGame(newGame);
+          playSound(m.san, !!m.captured, m.flags.includes('k') || m.flags.includes('q'));
+
+          // Execute queued pre-move
+          setPremove(prev => {
+            if (prev && !newGame.isGameOver()) {
+              setTimeout(() => {
+                try {
+                  const preGame = new Chess(newGame.fen());
+                  const move = preGame.move({ from: prev.from, to: prev.to, promotion: prev.promotion || undefined });
+                  if (move) {
+                    setLastMove({ from: prev.from, to: prev.to });
+                    setMoveHistory(h => [...h, move.san]);
+                    setGame(preGame);
+                    playSound(move.san, !!move.captured, move.flags.includes('k') || move.flags.includes('q'));
+                  }
+                } catch {
+                  // Pre-move invalid — discard
+                }
+              }, 50);
+            }
+            return null;
+          });
+        }
       }
       setIsThinking(false);
-    }, 100);
-  }, [game, difficulty, playSound]);
+    });
+  }, [game, difficulty, playSound, computeMove]);
 
   // Check for game over
   useEffect(() => {
@@ -235,6 +362,7 @@ function App() {
   }, [game, phase, playerColor, isThinking, makeAiMove, soundEnabled]);
 
   const startGame = () => {
+    unlockAudio(); // Unlock AudioContext on mobile (requires user gesture)
     const newGame = new Chess();
     const id = generateGameId();
     setGame(newGame);
@@ -249,6 +377,13 @@ function App() {
     setGameResult('');
     setAnalysisData([]);
     setFlipBoard(playerColor === 'b');
+    setPremove(null);
+    setConfirmingResign(false);
+    // Initialize clocks
+    if (timeControl > 0) {
+      setPlayerTime(timeControl);
+      setOpponentTime(timeControl);
+    }
     setPhase('playing');
   };
 
@@ -283,7 +418,26 @@ function App() {
       setViewingMoveIndex(null); // snap back to live game
       return;
     }
-    if (phase !== 'playing' || game.turn() !== playerColor || isThinking) return;
+    if (phase !== 'playing') return;
+
+    // Pre-move: allow selecting and setting a move while AI is thinking
+    if (isThinking || game.turn() !== playerColor) {
+      const piece = game.get(square);
+      if (piece && piece.color === playerColor) {
+        setSelectedSquare(square);
+        // Show theoretical valid moves for pre-move visualization
+        setValidMoves(getValidMoves(game, square));
+        return;
+      }
+      if (selectedSquare) {
+        // Set the pre-move
+        setPremove({ from: selectedSquare, to: square });
+        setSelectedSquare(null);
+        setValidMoves([]);
+        return;
+      }
+      return;
+    }
 
     const piece = game.get(square);
 
@@ -449,12 +603,14 @@ function App() {
     const bestHintMove = currentHint?.topMoves[0]?.move;
     const isHintSquare = !isViewingHistory && showHint && bestHintMove && (bestHintMove.from === squareName || bestHintMove.to === squareName);
     const isCheck = piece && piece.type === 'k' && displayGame.inCheck() && piece.color === displayGame.turn();
+    const isPremoveSquare = premove && (premove.from === squareName || premove.to === squareName);
 
     let className = `square ${isLight ? 'light' : 'dark'}`;
     if (isSelected) className += ' selected';
     if (isLastMoveSquare) className += ' last-move';
     if (isHintSquare) className += ' hint-highlight';
     if (isCheck) className += ' in-check';
+    if (isPremoveSquare) className += ' premove';
 
     return (
       <div
@@ -472,7 +628,15 @@ function App() {
   };
 
   const renderBoard = () => (
-    <div className="board">
+    <div
+      className="board"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setPremove(null);
+        setSelectedSquare(null);
+        setValidMoves([]);
+      }}
+    >
       {Array.from({ length: 8 }, (_, rank) =>
         Array.from({ length: 8 }, (_, file) => renderSquare(rank, file))
       )}
@@ -538,7 +702,13 @@ function App() {
     return (
       <div className="eval-bar-container">
         <div className="eval-bar">
-          <div className="eval-bar-white" style={{ height: `${whitePercent}%` }} />
+          <div
+            className="eval-bar-white"
+            style={{
+              height: `${whitePercent}%`,
+              '--eval-pct': `${whitePercent}%`,
+            } as React.CSSProperties}
+          />
         </div>
         <span className="eval-label">
           {evaluation > 0 ? '+' : ''}{(evaluation / 100).toFixed(1)}
@@ -626,10 +796,27 @@ function App() {
 
             <div className="option-group">
               <label>Difficulty</label>
-              <div className="toggle-group triple">
-                <button className={difficulty === 'easy' ? 'active' : ''} onClick={() => setDifficulty('easy')}>Easy</button>
-                <button className={difficulty === 'medium' ? 'active' : ''} onClick={() => setDifficulty('medium')}>Medium</button>
-                <button className={difficulty === 'hard' ? 'active' : ''} onClick={() => setDifficulty('hard')}>Hard</button>
+              <div className="toggle-group difficulty-group">
+                {(['beginner', 'easy', 'medium', 'hard', 'expert', 'master'] as Difficulty[]).map(d => (
+                  <button key={d} className={difficulty === d ? 'active' : ''} onClick={() => setDifficulty(d)}>
+                    {d.charAt(0).toUpperCase() + d.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="option-group">
+              <label>Time Control</label>
+              <div className="toggle-group time-control-group">
+                {([0, 60, 180, 300, 600, 900] as TimeControl[]).map(tc => (
+                  <button
+                    key={tc}
+                    className={timeControl === tc ? 'active' : ''}
+                    onClick={() => setTimeControl(tc)}
+                  >
+                    {TIME_LABELS[tc]}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -748,7 +935,10 @@ function App() {
       <div className="app">
         <div className="analysis-screen">
           <div className="analysis-header">
-            <h2>Game Analysis</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.8rem' }}>
+              <button className="btn-small" onClick={() => setPhase('menu')}>&#8592; Back</button>
+              <h2>Game Analysis</h2>
+            </div>
             <button className="btn-secondary" onClick={() => setPhase('menu')}>New Game</button>
           </div>
 
@@ -897,6 +1087,9 @@ function App() {
       <div className="game-screen">
         <div className="game-topbar">
           <div className="topbar-left">
+            <button className="topbar-btn topbar-back" onClick={() => setPhase('menu')} title="Back to menu">
+              &#8592;
+            </button>
             <span className="topbar-logo">
               <ChessPiece color="w" type="n" className="topbar-piece-svg" />
             </span>
@@ -954,12 +1147,19 @@ function App() {
                 <span>Computer ({difficulty})</span>
                 {isThinking && <span className="thinking-indicator">Thinking...</span>}
               </div>
-              <div className="captured-pieces">
-                {(playerColor === 'w' ? whiteCaptured : blackCaptured).map((p, i) => (
-                  <ChessPiece key={i} color={p.color} type={p.type} className="captured-svg" />
-                ))}
-                {(playerColor === 'w' ? materialAdvantage < 0 : materialAdvantage > 0) && (
-                  <span className="material-diff">+{Math.abs(materialAdvantage)}</span>
+              <div className="player-label-right">
+                <div className="captured-pieces">
+                  {(playerColor === 'w' ? whiteCaptured : blackCaptured).map((p, i) => (
+                    <ChessPiece key={i} color={p.color} type={p.type} className="captured-svg" />
+                  ))}
+                  {(playerColor === 'w' ? materialAdvantage < 0 : materialAdvantage > 0) && (
+                    <span className="material-diff">+{Math.abs(materialAdvantage)}</span>
+                  )}
+                </div>
+                {timeControl > 0 && (
+                  <div className={`clock ${game.turn() !== playerColor && phase === 'playing' ? 'clock-active' : ''} ${opponentTime <= 30 && opponentTime > 0 ? 'clock-low' : ''}`}>
+                    {formatClock(opponentTime)}
+                  </div>
                 )}
               </div>
             </div>
@@ -973,12 +1173,19 @@ function App() {
                 </span>
                 <span>You</span>
               </div>
-              <div className="captured-pieces">
-                {(playerColor === 'w' ? blackCaptured : whiteCaptured).map((p, i) => (
-                  <ChessPiece key={i} color={p.color} type={p.type} className="captured-svg" />
-                ))}
-                {(playerColor === 'w' ? materialAdvantage > 0 : materialAdvantage < 0) && (
-                  <span className="material-diff">+{Math.abs(materialAdvantage)}</span>
+              <div className="player-label-right">
+                <div className="captured-pieces">
+                  {(playerColor === 'w' ? blackCaptured : whiteCaptured).map((p, i) => (
+                    <ChessPiece key={i} color={p.color} type={p.type} className="captured-svg" />
+                  ))}
+                  {(playerColor === 'w' ? materialAdvantage > 0 : materialAdvantage < 0) && (
+                    <span className="material-diff">+{Math.abs(materialAdvantage)}</span>
+                  )}
+                </div>
+                {timeControl > 0 && (
+                  <div className={`clock ${game.turn() === playerColor && phase === 'playing' ? 'clock-active' : ''} ${playerTime <= 30 && playerTime > 0 ? 'clock-low' : ''}`}>
+                    {formatClock(playerTime)}
+                  </div>
                 )}
               </div>
             </div>

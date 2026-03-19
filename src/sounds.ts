@@ -3,8 +3,28 @@
 let audioCtx: AudioContext | null = null;
 
 function getCtx(): AudioContext {
-  if (!audioCtx) audioCtx = new AudioContext();
+  if (!audioCtx) {
+    audioCtx = new AudioContext();
+  }
+  // Resume suspended context (required on mobile after user gesture)
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
   return audioCtx;
+}
+
+// Call this on first user interaction (tap/click) to unlock audio on mobile
+export function unlockAudio() {
+  const ctx = getCtx();
+  if (ctx.state === 'suspended') {
+    ctx.resume();
+  }
+  // Create and immediately play a silent buffer to unlock on iOS
+  const buffer = ctx.createBuffer(1, 1, 22050);
+  const source = ctx.createBufferSource();
+  source.buffer = buffer;
+  source.connect(ctx.destination);
+  source.start(0);
 }
 
 function playTone(freq: number, duration: number, type: OscillatorType = 'sine', volume = 0.15) {

@@ -6,7 +6,7 @@ export interface SavedGame {
   pgn: string;
   moveHistory: string[];
   playerColor: 'w' | 'b';
-  difficulty: 'easy' | 'medium' | 'hard';
+  difficulty: string;
   hintsEnabled: boolean;
   date: string; // ISO string
   result?: string; // undefined = in progress
@@ -103,7 +103,7 @@ export interface PlayerStats {
 
 const STATS_KEY = 'chess-coach-player-stats';
 const DEFAULT_ELO = 1200;
-const DIFFICULTY_ELO: Record<string, number> = { easy: 800, medium: 1200, hard: 1600 };
+const DIFFICULTY_ELO: Record<string, number> = { beginner: 400, easy: 800, medium: 1200, hard: 1600, expert: 2000, master: 2400 };
 
 const DEFAULT_STATS: PlayerStats = {
   elo: DEFAULT_ELO,
@@ -143,7 +143,7 @@ function calculateEloChange(playerElo: number, opponentElo: number, result: numb
 
 export function updateStatsAfterGame(
   resultType: 'win' | 'loss' | 'draw',
-  difficulty: 'easy' | 'medium' | 'hard',
+  difficulty: string,
   moveCount: number
 ): { stats: PlayerStats; eloChange: number } {
   const stats = getPlayerStats();

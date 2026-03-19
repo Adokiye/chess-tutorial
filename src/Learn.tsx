@@ -1,16 +1,19 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Chess, type Square } from 'chess.js';
 import {
   lessons,
   chessBooks,
   famousGames,
+  chessPuzzles,
   type Lesson,
   type FamousGame,
+  type ChessPuzzle,
 } from './tutorialData';
 import { ChessPiece } from './pieces';
 
-type LearnTab = 'lessons' | 'books' | 'games';
+type LearnTab = 'lessons' | 'books' | 'games' | 'puzzles';
 type BookFilter = 'all' | 'beginner' | 'intermediate' | 'advanced';
+type PuzzleFilter = 'all' | 'beginner' | 'intermediate' | 'advanced';
 
 interface LearnProps {
   onBack: () => void;
@@ -216,8 +219,198 @@ function LessonViewer({ lesson, onBack }: { lesson: Lesson; onBack: () => void }
               </div>
             );
           }
+          if (block.type === 'illustration') {
+            return (
+              <div key={i} className="lesson-block illustration-block">
+                <div className="illustration-header">
+                  <div className="illustration-icon">
+                    <ChessPiece color="w" type="n" className="illustration-piece-svg" />
+                  </div>
+                  <h4 className="illustration-title">{block.content}</h4>
+                </div>
+                {block.illustrationAlt && (
+                  <div className="illustration-body">
+                    {block.illustrationAlt.split('\n').map((line, j) => (
+                      <p key={j}>{line}</p>
+                    ))}
+                  </div>
+                )}
+                {block.fen && (() => {
+                  try {
+                    return <MiniBoard fen={block.fen} />;
+                  } catch {
+                    return null;
+                  }
+                })()}
+              </div>
+            );
+          }
           return null;
         })}
+      </div>
+    </div>
+  );
+}
+
+function PuzzlePlayer({ puzzle, onBack }: { puzzle: ChessPuzzle; onBack: () => void }) {
+  const [game, setGame] = useState(() => new Chess(puzzle.fen));
+  const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
+  const [solutionIndex, setSolutionIndex] = useState(0);
+  const [status, setStatus] = useState<'playing' | 'correct' | 'wrong'>('playing');
+  const [showHint, setShowHint] = useState(false);
+  const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null);
+
+  const validMoves = selectedSquare
+    ? game.moves({ square: selectedSquare, verbose: true }).map(m => m.to as Square)
+    : [];
+
+  const handleClick = useCallback((square: Square) => {
+    if (status !== 'playing') return;
+
+    const piece = game.get(square);
+    const myColor = puzzle.toMove;
+
+    // Select own piece
+    if (piece && piece.color === myColor && game.turn() === myColor) {
+      setSelectedSquare(square);
+      return;
+    }
+
+    // Try to make a move
+    if (selectedSquare && game.turn() === myColor) {
+      try {
+        const newGame = new Chess(game.fen());
+        const move = newGame.move({ from: selectedSquare, to: square, promotion: 'q' });
+        if (move) {
+          setLastMove({ from: selectedSquare, to: square });
+          setGame(newGame);
+
+          // Check if this matches the expected solution move
+          const expectedSan = puzzle.solution[solutionIndex];
+          if (move.san === expectedSan) {
+            const nextIdx = solutionIndex + 1;
+            if (nextIdx >= puzzle.solution.length) {
+              setStatus('correct');
+            } else {
+              // Play the opponent's response
+              setSolutionIndex(nextIdx);
+              setTimeout(() => {
+                const respGame = new Chess(newGame.fen());
+                try {
+                  const resp = respGame.move(puzzle.solution[nextIdx]);
+                  if (resp) {
+                    setLastMove({ from: resp.from as Square, to: resp.to as Square });
+                    setGame(respGame);
+                    setSolutionIndex(nextIdx + 1);
+                    // Check if puzzle is done after response
+                    if (nextIdx + 1 >= puzzle.solution.length) {
+                      setStatus('correct');
+                    }
+                  }
+                } catch {
+                  setStatus('correct');
+                }
+              }, 400);
+            }
+          } else {
+            setStatus('wrong');
+          }
+        }
+      } catch {
+        // invalid
+      }
+      setSelectedSquare(null);
+    }
+  }, [game, selectedSquare, status, solutionIndex, puzzle]);
+
+  const reset = () => {
+    setGame(new Chess(puzzle.fen));
+    setSelectedSquare(null);
+    setSolutionIndex(0);
+    setStatus('playing');
+    setLastMove(null);
+    setShowHint(false);
+  };
+
+  const flipBoard = puzzle.toMove === 'b';
+
+  return (
+    <div className="puzzle-player">
+      <div className="puzzle-player-header">
+        <button className="btn-small" onClick={onBack}>Back</button>
+        <div>
+          <h3 className="puzzle-player-title">{puzzle.title}</h3>
+          <p className="puzzle-player-desc">{puzzle.description}</p>
+        </div>
+        <span className={`difficulty-badge ${puzzle.difficulty}`}>{puzzle.difficulty}</span>
+      </div>
+
+      <div className="puzzle-player-layout">
+        <div className="puzzle-board-section">
+          <div className="puzzle-to-move">
+            {puzzle.toMove === 'w' ? 'White' : 'Black'} to move — {puzzle.theme}
+          </div>
+
+          <div className="board puzzle-board">
+            {Array.from({ length: 8 }, (_, rank) =>
+              Array.from({ length: 8 }, (_, file) => {
+                const displayRank = flipBoard ? rank : 7 - rank;
+                const displayFile = flipBoard ? 7 - file : file;
+                const squareName = `${String.fromCharCode(97 + displayFile)}${displayRank + 1}` as Square;
+                const isLight = (displayRank + displayFile) % 2 === 1;
+                const piece = game.get(squareName);
+                const isSelected = selectedSquare === squareName;
+                const isValid = validMoves.includes(squareName);
+                const isLastMoveSquare = lastMove && (lastMove.from === squareName || lastMove.to === squareName);
+
+                let className = `square ${isLight ? 'light' : 'dark'}`;
+                if (isSelected) className += ' selected';
+                if (isLastMoveSquare) className += ' last-move';
+                if (status === 'correct' && isLastMoveSquare) className += ' puzzle-correct';
+                if (status === 'wrong' && isLastMoveSquare) className += ' puzzle-wrong';
+
+                return (
+                  <div key={squareName} className={className} onClick={() => handleClick(squareName)}>
+                    {file === 0 && <span className="coord-rank">{displayRank + 1}</span>}
+                    {rank === 7 && <span className="coord-file">{String.fromCharCode(97 + displayFile)}</span>}
+                    {isValid && !piece && <div className="valid-move-dot" />}
+                    {isValid && piece && <div className="valid-move-capture" />}
+                    {piece && <ChessPiece color={piece.color} type={piece.type} className="piece-svg" />}
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {status === 'correct' && (
+            <div className="puzzle-feedback correct">
+              Correct! Well done.
+            </div>
+          )}
+          {status === 'wrong' && (
+            <div className="puzzle-feedback wrong">
+              Not quite. The answer was <strong>{puzzle.solution[solutionIndex]}</strong>.
+            </div>
+          )}
+        </div>
+
+        <div className="puzzle-info-panel">
+          {!showHint && status === 'playing' && (
+            <button className="btn-small btn-hint" onClick={() => setShowHint(true)}>Show Hint</button>
+          )}
+          {showHint && (
+            <div className="puzzle-hint-box">
+              <div className="tip-label">Hint</div>
+              <p>{puzzle.hint}</p>
+            </div>
+          )}
+
+          {status !== 'playing' && (
+            <button className="btn-primary" onClick={reset} style={{ marginTop: '0.5rem' }}>
+              Try Again
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -227,8 +420,10 @@ export default function Learn({ onBack }: LearnProps) {
   const [tab, setTab] = useState<LearnTab>('lessons');
   const [selectedLesson, setSelectedLesson] = useState<Lesson | null>(null);
   const [selectedGame, setSelectedGame] = useState<FamousGame | null>(null);
+  const [selectedPuzzle, setSelectedPuzzle] = useState<ChessPuzzle | null>(null);
   const [bookFilter, setBookFilter] = useState<BookFilter>('all');
   const [lessonFilter, setLessonFilter] = useState<string>('all');
+  const [puzzleFilter, setPuzzleFilter] = useState<PuzzleFilter>('all');
 
   // Get unique lesson categories
   const categories = ['all', ...Array.from(new Set(lessons.map(l => l.category)))];
@@ -240,6 +435,19 @@ export default function Learn({ onBack }: LearnProps) {
   const filteredBooks = bookFilter === 'all'
     ? chessBooks
     : chessBooks.filter(b => b.level === bookFilter);
+
+  const filteredPuzzles = puzzleFilter === 'all'
+    ? chessPuzzles
+    : chessPuzzles.filter(p => p.difficulty === puzzleFilter);
+
+  // If viewing a puzzle
+  if (selectedPuzzle) {
+    return (
+      <div className="learn-screen">
+        <PuzzlePlayer puzzle={selectedPuzzle} onBack={() => setSelectedPuzzle(null)} />
+      </div>
+    );
+  }
 
   // If viewing a lesson
   if (selectedLesson) {
@@ -272,6 +480,9 @@ export default function Learn({ onBack }: LearnProps) {
       <div className="learn-tabs">
         <button className={tab === 'lessons' ? 'active' : ''} onClick={() => setTab('lessons')}>
           Lessons
+        </button>
+        <button className={tab === 'puzzles' ? 'active' : ''} onClick={() => setTab('puzzles')}>
+          Puzzles
         </button>
         <button className={tab === 'books' ? 'active' : ''} onClick={() => setTab('books')}>
           Books
@@ -313,6 +524,47 @@ export default function Learn({ onBack }: LearnProps) {
                 <p className="lesson-card-preview">
                   {lesson.content.find(b => b.type === 'text')?.content.slice(0, 120)}...
                 </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* PUZZLES TAB */}
+      {tab === 'puzzles' && (
+        <div className="learn-content">
+          <p className="games-intro">
+            Solve tactical puzzles to sharpen your pattern recognition. Find the best move! Click a puzzle to start solving.
+          </p>
+
+          <div className="learn-filters">
+            {(['all', 'beginner', 'intermediate', 'advanced'] as const).map(level => (
+              <button
+                key={level}
+                className={`filter-pill ${puzzleFilter === level ? 'active' : ''}`}
+                onClick={() => setPuzzleFilter(level)}
+              >
+                {level === 'all' ? 'All Levels' : level.charAt(0).toUpperCase() + level.slice(1)}
+              </button>
+            ))}
+          </div>
+
+          <div className="puzzles-grid">
+            {filteredPuzzles.map(puzzle => (
+              <div
+                key={puzzle.id}
+                className="puzzle-card"
+                onClick={() => setSelectedPuzzle(puzzle)}
+              >
+                <div className="puzzle-card-top">
+                  <span className={`difficulty-badge ${puzzle.difficulty}`}>{puzzle.difficulty}</span>
+                  <span className="puzzle-theme-badge">{puzzle.theme}</span>
+                </div>
+                <h3>{puzzle.title}</h3>
+                <p className="puzzle-card-desc">{puzzle.description}</p>
+                <div className="puzzle-card-preview">
+                  <MiniBoard fen={puzzle.fen} />
+                </div>
               </div>
             ))}
           </div>

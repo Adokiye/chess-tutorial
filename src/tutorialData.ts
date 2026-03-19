@@ -11,9 +11,22 @@ export interface Lesson {
 }
 
 export interface LessonBlock {
-  type: 'text' | 'diagram' | 'tip' | 'example';
+  type: 'text' | 'diagram' | 'tip' | 'example' | 'illustration';
   content: string;
   fen?: string; // For diagram blocks
+  illustrationAlt?: string; // For illustration blocks — descriptive alt text
+}
+
+export interface ChessPuzzle {
+  id: string;
+  title: string;
+  description: string;
+  fen: string;
+  toMove: 'w' | 'b';
+  solution: string[]; // SAN moves in order (e.g. ['Qh7+', 'Kf8', 'Qh8#'])
+  difficulty: 'beginner' | 'intermediate' | 'advanced';
+  theme: string; // e.g. 'Checkmate in 2', 'Fork', 'Pin'
+  hint: string;
 }
 
 export interface ChessBook {
@@ -54,9 +67,11 @@ export const lessons: Lesson[] = [
     content: [
       { type: 'text', content: 'The King is the most important piece on the board. If your King is checkmated, you lose the game. The King can move one square in any direction: horizontally, vertically, or diagonally.' },
       { type: 'diagram', content: 'The King on e4 can move to d3, d4, d5, e3, e5, f3, f4, or f5.', fen: '8/8/8/8/4K3/8/8/8 w - - 0 1' },
+      { type: 'illustration', content: 'King Movement', illustrationAlt: 'The King moves exactly ONE square in any direction — up, down, left, right, and diagonally. Think of it as a short-range piece that needs constant protection.' },
       { type: 'tip', content: 'The King cannot move to a square that is attacked by an opponent\'s piece. This means two Kings can never stand next to each other.' },
       { type: 'text', content: 'Special move: Castling. The King can castle with either rook once per game, provided: neither the King nor the rook has moved, there are no pieces between them, the King is not in check, and the King does not pass through or land on an attacked square.' },
       { type: 'text', content: 'Kingside castling (O-O): The King moves two squares toward the h-rook, and the rook jumps to the other side. Queenside castling (O-O-O): The King moves two squares toward the a-rook.' },
+      { type: 'illustration', content: 'Castling', illustrationAlt: 'Before: King on e1, Rook on h1 → After O-O: King on g1, Rook on f1. The King tucks safely behind pawns while the Rook enters the game. Castle early for safety!' },
       { type: 'tip', content: 'Castle early! It gets your King to safety and brings your rook into the game. Most strong players castle within the first 10 moves.' },
     ],
   },
@@ -68,6 +83,7 @@ export const lessons: Lesson[] = [
     content: [
       { type: 'text', content: 'The Queen is the most powerful piece. She combines the movement of the Rook and Bishop, moving any number of squares in a straight line: horizontally, vertically, or diagonally.' },
       { type: 'diagram', content: 'The Queen on d4 controls the entire d-file, 4th rank, and both diagonals.', fen: '8/8/8/8/3Q4/8/8/8 w - - 0 1' },
+      { type: 'illustration', content: 'Queen Movement', illustrationAlt: 'The Queen combines the Rook (straight lines) and Bishop (diagonals). She can reach up to 27 squares from the center — the most powerful piece on the board!' },
       { type: 'text', content: 'The Queen is worth approximately 9 points (pawns). Losing your Queen without compensation is usually decisive.' },
       { type: 'tip', content: 'Don\'t bring your Queen out too early! In the opening, the Queen can become a target for your opponent\'s minor pieces, causing you to waste moves retreating.' },
       { type: 'example', content: 'A common beginner mistake: 1.e4 e5 2.Qh5?! — While this threatens Qxe5 and Scholar\'s Mate (Qxf7#), an experienced player will gain time by developing pieces that attack the Queen.' },
@@ -80,6 +96,7 @@ export const lessons: Lesson[] = [
     difficulty: 'beginner',
     content: [
       { type: 'text', content: 'The Rook moves any number of squares along a rank (row) or file (column). It cannot jump over pieces. The Rook is worth approximately 5 points.' },
+      { type: 'illustration', content: 'Rook Movement', illustrationAlt: 'The Rook moves in straight lines — any number of squares horizontally or vertically. It cannot jump over pieces. Rooks are worth 5 points and are most powerful on open files.' },
       { type: 'diagram', content: 'The Rook on d4 controls the entire d-file and 4th rank.', fen: '8/8/8/8/3R4/8/8/8 w - - 0 1' },
       { type: 'text', content: 'Two Rooks working together (called "doubled rooks" when on the same file or "connected rooks" on the same rank) are extremely powerful, often worth more than a Queen.' },
       { type: 'tip', content: 'Place your rooks on open files (files with no pawns) or semi-open files (files with only enemy pawns). Rooks on the 7th rank (2nd rank for Black) are devastating because they attack pawns and trap the enemy King.' },
@@ -93,6 +110,7 @@ export const lessons: Lesson[] = [
     difficulty: 'beginner',
     content: [
       { type: 'text', content: 'The Bishop moves any number of squares diagonally. Each player starts with two Bishops — one on light squares and one on dark squares. A Bishop always stays on its original color. The Bishop is worth approximately 3 points.' },
+      { type: 'illustration', content: 'Bishop Movement', illustrationAlt: 'The Bishop moves diagonally any number of squares. Each Bishop stays on its starting color for the entire game — that\'s why the pair of Bishops (covering both colors) is so valuable.' },
       { type: 'diagram', content: 'The Bishop on c4 controls the a2-g8 and a6-f1 diagonals.', fen: '8/8/8/8/2B5/8/8/8 w - - 0 1' },
       { type: 'text', content: 'The "Bishop pair" (having both Bishops when your opponent doesn\'t) is a significant advantage, especially in open positions. Two Bishops can cover both colors and work together over long diagonals.' },
       { type: 'tip', content: 'Bishops are strongest in open positions with few pawns blocking their diagonals. Try to keep the position open when you have the Bishop pair.' },
@@ -105,6 +123,7 @@ export const lessons: Lesson[] = [
     difficulty: 'beginner',
     content: [
       { type: 'text', content: 'The Knight moves in an "L" shape: two squares in one direction, then one square perpendicular (or vice versa). The Knight is the only piece that can jump over other pieces. It is worth approximately 3 points.' },
+      { type: 'illustration', content: 'Knight Movement', illustrationAlt: 'The Knight moves in an L-shape: two squares in one direction and one square perpendicular. It is the ONLY piece that can jump over other pieces. Knights are worth 3 points.' },
       { type: 'diagram', content: 'A Knight on e4 can move to c3, c5, d2, d6, f2, f6, g3, or g5.', fen: '8/8/8/8/4N3/8/8/8 w - - 0 1' },
       { type: 'text', content: 'Knights are strongest in closed positions (many pawns blocking the center). They can jump over pawns while Bishops get blocked. Knights are also excellent at creating forks — attacking two or more pieces at once.' },
       { type: 'tip', content: 'A Knight on the rim is dim! Knights are much weaker on the edge of the board (controlling only 2-4 squares) compared to the center (controlling 8 squares). Try to keep your Knights centralized.' },
@@ -118,6 +137,7 @@ export const lessons: Lesson[] = [
     difficulty: 'beginner',
     content: [
       { type: 'text', content: 'Pawns move forward one square, but capture diagonally. On their first move, pawns can advance two squares. Pawns are worth 1 point, but their structure determines the character of the entire game.' },
+      { type: 'illustration', content: 'Pawn Movement', illustrationAlt: 'Pawns move forward one square (or two from starting position). They capture diagonally. Special moves: en passant (capturing a pawn that just moved two squares) and promotion (reaching the last rank to become any piece).' },
       { type: 'diagram', content: 'Pawns in the starting position. White\'s pawns move up, Black\'s move down.', fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1' },
       { type: 'text', content: 'Special moves:\n\n1. En passant: If a pawn advances two squares and lands beside an enemy pawn, the enemy pawn can capture it as if it had moved only one square. This must be done immediately.\n\n2. Promotion: When a pawn reaches the opposite end of the board, it must be promoted to a Queen, Rook, Bishop, or Knight. Most players choose a Queen.' },
       { type: 'tip', content: 'Pawns can\'t move backward! Every pawn move is permanent, so think carefully. Pawn structure (the arrangement of your pawns) is one of the most important strategic concepts in chess.' },
@@ -133,6 +153,7 @@ export const lessons: Lesson[] = [
     difficulty: 'beginner',
     content: [
       { type: 'text', content: 'Check: When your King is attacked by an opponent\'s piece, you are "in check." You MUST get out of check on your next move. There are three ways:\n\n1. Move the King to a safe square\n2. Block the check with another piece\n3. Capture the attacking piece' },
+      { type: 'illustration', content: 'Checkmate vs Check', illustrationAlt: 'Check: the King is attacked but can escape (move, block, or capture the attacker).\nCheckmate: the King is attacked AND has no escape — game over!\nStalemate: NOT in check but no legal moves — this is a draw, not a win.' },
       { type: 'text', content: 'Checkmate: When your King is in check and there is no legal way to escape, it is checkmate — the game is over! The player who delivers checkmate wins.' },
       { type: 'diagram', content: 'Back rank mate: The Rook on e8 delivers checkmate. The King on g1 is blocked by its own pawns.', fen: '4R2k/5ppp/8/8/8/8/8/6K1 w - - 0 1' },
       { type: 'text', content: 'Stalemate: If a player is NOT in check but has no legal moves, the game is a draw by stalemate. This is an important rule — if you\'re winning, be careful not to accidentally stalemate your opponent!' },
@@ -147,6 +168,7 @@ export const lessons: Lesson[] = [
     difficulty: 'beginner',
     content: [
       { type: 'text', content: 'The opening is the first phase of the game (roughly the first 10-15 moves). You don\'t need to memorize opening theory to play well — just follow these core principles:' },
+      { type: 'illustration', content: 'The Four Golden Rules', illustrationAlt: '1. Control the center (d4, d5, e4, e5)\n2. Develop Knights and Bishops quickly\n3. Castle within the first 10 moves\n4. Connect your Rooks on the back rank' },
       { type: 'text', content: '1. Control the center: Place pawns and pieces on or aimed at the central squares (d4, d5, e4, e5). The center is the most important area of the board — pieces in the center control the most squares.' },
       { type: 'text', content: '2. Develop your pieces: Get your Knights and Bishops off the back rank and into active positions. Each move should contribute to development. Don\'t move the same piece twice without a good reason.' },
       { type: 'text', content: '3. Castle early: Get your King to safety, usually by castling kingside within the first 7-10 moves. An uncastled King in the center is vulnerable to attacks.' },
@@ -162,6 +184,7 @@ export const lessons: Lesson[] = [
     difficulty: 'beginner',
     content: [
       { type: 'text', content: 'Understanding relative piece values is essential for making good exchanges:\n\n- Pawn = 1 point\n- Knight = 3 points\n- Bishop = 3 points (slightly more than a Knight in most positions)\n- Rook = 5 points\n- Queen = 9 points\n- King = invaluable (the game!)' },
+      { type: 'illustration', content: 'Piece Value Guide', illustrationAlt: 'Pawn = 1 point\nKnight = 3 points\nBishop = 3 points (Bishop pair bonus!)\nRook = 5 points\nQueen = 9 points\nKing = Priceless (game ends if checkmated)' },
       { type: 'text', content: 'Exchange guidelines:\n\n- Trading a Knight for a Bishop (or vice versa) is roughly equal\n- A Rook for a minor piece (Knight or Bishop) is called "winning the exchange" — it\'s good for you\n- A Queen for two Rooks is roughly equal\n- Three minor pieces are usually stronger than a Queen\n- Two Bishops (the "Bishop pair") have a small advantage over Bishop + Knight or two Knights' },
       { type: 'tip', content: 'These values are guidelines, not rules! A Knight on a beautiful outpost can be worth more than a passive Rook stuck behind its own pawns. Always consider the specific position.' },
       { type: 'text', content: 'When to exchange pieces:\n\n- Exchange when you\'re ahead in material (simplify toward an endgame)\n- Exchange your opponent\'s active pieces\n- Avoid trading when you\'re behind — keep pieces on for counterplay\n- Exchange the defender of a key square you want to control' },
@@ -176,6 +199,7 @@ export const lessons: Lesson[] = [
     difficulty: 'intermediate',
     content: [
       { type: 'text', content: 'A fork is when one piece attacks two or more enemy pieces simultaneously. The opponent can only save one piece, so you win material. Every piece can fork, but Knight forks are the most common and devastating because Knights can jump over pieces.' },
+      { type: 'illustration', content: 'The Fork', illustrationAlt: 'A fork is when ONE piece attacks TWO or more enemy pieces simultaneously. The opponent can only save one, so you win material. Knights are the best forking pieces because they attack in unusual patterns.' },
       { type: 'diagram', content: 'Knight fork! The Knight on c7 attacks both the King on e8 and the Rook on a8. Black must move the King, and White captures the Rook.', fen: 'r3k3/2N5/8/8/8/8/8/4K3 w - - 0 1' },
       { type: 'text', content: 'Types of forks:\n\n- Knight fork: The most classic. Look for opportunities to place your Knight where it attacks the King and Queen, King and Rook, or Queen and Rook.\n- Pawn fork: A pawn attacking two pieces diagonally. Especially strong because a 1-point pawn may win a 3 or 5-point piece.\n- Queen fork: The Queen\'s wide range makes her excellent at forking distant pieces.\n- Bishop/Rook forks: Less common but still powerful.' },
       { type: 'tip', content: 'To find forks: Look at where your Knight could land. Can it check the King and attack another piece? If a fork isn\'t available now, can you set one up by driving enemy pieces to the right squares first?' },
@@ -189,6 +213,7 @@ export const lessons: Lesson[] = [
     difficulty: 'intermediate',
     content: [
       { type: 'text', content: 'A pin is when a piece attacks an enemy piece that cannot or should not move because a more valuable piece stands behind it on the same line. Only Bishops, Rooks, and Queens can create pins.' },
+      { type: 'illustration', content: 'Pin vs Skewer', illustrationAlt: 'Pin: A piece attacks through a less valuable piece to a more valuable one behind it. The front piece cannot move without exposing the one behind.\nSkewer: The reverse — attack the MORE valuable piece first, forcing it to move and capturing what\'s behind.' },
       { type: 'text', content: 'Two types of pins:\n\n- Absolute pin: The piece behind is the King, so the pinned piece LEGALLY cannot move. Example: Bishop pins a Knight to the King.\n- Relative pin: The piece behind is valuable (like a Queen) but the pinned piece can technically move (though it would be a bad idea).' },
       { type: 'diagram', content: 'Absolute pin: The Bishop on b5 pins the Knight on c6 to the King on e8. The Knight cannot move.', fen: 'r2qkbnr/pppppppp/2n5/1B6/4P3/8/PPPP1PPP/RNBQK1NR w KQkq - 0 1' },
       { type: 'text', content: 'A skewer is the reverse of a pin: A piece attacks a valuable enemy piece, and when that piece moves, a less valuable piece behind it gets captured. Think of it as a "reverse pin."' },
@@ -202,6 +227,7 @@ export const lessons: Lesson[] = [
     difficulty: 'intermediate',
     content: [
       { type: 'text', content: 'A discovered attack occurs when you move a piece, unmasking an attack by another piece behind it. The moved piece can threaten something on its own, creating two threats simultaneously.' },
+      { type: 'illustration', content: 'Discovered Attack', illustrationAlt: 'A discovered attack happens when you move one piece to reveal an attack from another piece behind it. If both the moving piece AND the revealed piece create threats, it\'s a double attack — devastating because the opponent can only deal with one threat.' },
       { type: 'text', content: 'Discovered check is when the unmasked attack is a check. This is extra powerful because the opponent must address the check, allowing your moved piece to wreak havoc elsewhere.' },
       { type: 'text', content: 'Double check is when BOTH the moved piece and the unmasked piece give check simultaneously. This is the most forcing move in chess — the opponent MUST move the King since you can\'t block or capture two checking pieces at once.' },
       { type: 'tip', content: 'When you see a piece lined up behind another on the same rank, file, or diagonal, look for discovered attack opportunities. The "moving" piece should create its own threat (capture something, give check, or attack a valuable piece).' },
@@ -217,6 +243,7 @@ export const lessons: Lesson[] = [
     difficulty: 'intermediate',
     content: [
       { type: 'text', content: 'Pawn structure is the skeleton of your position. Since pawns can\'t move backward, every pawn move has lasting consequences. Your pawn structure often determines the correct piece placement and long-term plans.' },
+      { type: 'illustration', content: 'Key Pawn Structures', illustrationAlt: 'Isolated pawn: No friendly pawns on adjacent files — a weakness.\nDoubled pawns: Two pawns on the same file — reduced mobility.\nPassed pawn: No enemy pawns can stop it from promoting — a major asset.\nPawn chain: Connected diagonal pawns — strong and supportive.' },
       { type: 'text', content: 'Key pawn weaknesses:\n\n- Isolated pawn: No friendly pawns on adjacent files. It can\'t be protected by another pawn and must be defended by pieces. The square in front of an isolated pawn is a great outpost for your opponent.\n\n- Backward pawn: A pawn that can\'t advance because the square in front is controlled by enemy pawns, and it can\'t be protected by adjacent pawns. Similar weakness to an isolated pawn.\n\n- Doubled pawns: Two pawns of the same color on one file. They block each other and are harder to defend. However, doubled pawns can sometimes be useful if they control key squares.' },
       { type: 'text', content: 'Pawn strengths:\n\n- Passed pawn: No enemy pawns can stop it from promoting. Passed pawns are extremely powerful in endgames.\n- Connected passed pawns: Two passed pawns side by side are nearly unstoppable.\n- Pawn majority: Having more pawns on one side of the board means you can create a passed pawn there.' },
       { type: 'tip', content: 'Study the pawn structure before making a plan. Ask: Where are the weaknesses? Where should my pieces go? Which side should I play on? The pawn structure gives you the answer.' },
@@ -229,6 +256,7 @@ export const lessons: Lesson[] = [
     difficulty: 'intermediate',
     content: [
       { type: 'text', content: 'The middlegame begins when both sides have completed development (usually around move 15). Unlike the opening (where principles guide you) and the endgame (where technique matters), the middlegame requires creative thinking and planning.' },
+      { type: 'illustration', content: 'Middlegame Priorities', illustrationAlt: '1. Improve your worst-placed piece\n2. Create threats that force your opponent to react\n3. Control open files with Rooks\n4. Target weak pawns and squares\n5. Coordinate your pieces toward a plan' },
       { type: 'text', content: 'How to form a plan:\n\n1. Assess the position: Who has the better pieces? Where are the weaknesses? Which side of the board offers the best chances?\n\n2. Identify targets: Look for weak pawns, exposed Kings, poorly placed pieces.\n\n3. Improve your worst piece: Find your least active piece and figure out how to make it better.\n\n4. Coordinate your pieces: Pieces working together are much stronger than pieces working alone. Aim to control key squares, files, and diagonals with multiple pieces.' },
       { type: 'text', content: 'Attack vs. Defense:\n\n- Attack where you\'re stronger (usually the side of the board where you have more pawns or better-placed pieces)\n- Create weaknesses in your opponent\'s camp before attacking\n- Prophylaxis: Ask "what does my opponent want to do?" and prevent it\n- Don\'t attack prematurely — prepare first, then strike' },
       { type: 'tip', content: 'A bad plan is better than no plan at all! If you\'re unsure what to do, improve your worst-placed piece, trade off your opponent\'s good pieces, or advance your pawn majority.' },
@@ -243,6 +271,7 @@ export const lessons: Lesson[] = [
     difficulty: 'intermediate',
     content: [
       { type: 'text', content: 'King and pawn endgames are the foundation of all endgames. Even complex Rook or piece endgames can simplify into King and pawn positions, so understanding these is crucial.' },
+      { type: 'illustration', content: 'Key Endgame Concepts', illustrationAlt: 'Opposition: Kings face each other with one square between them. The player NOT to move has the opposition (advantage).\nThe Rule of the Square: Draw a diagonal from the pawn to its promotion square. If the enemy King can step inside this square, it catches the pawn.' },
       { type: 'text', content: 'The Rule of the Square: Can a King catch a passed pawn? Draw a mental square from the pawn to its promotion square. If the opposing King can step into this square, it can catch the pawn.' },
       { type: 'text', content: 'Opposition: When two Kings face each other with one square between them, the player who does NOT have to move has "the opposition." This is a huge advantage in King and pawn endgames because it means you can outflank the opposing King.' },
       { type: 'diagram', content: 'White has the opposition (it\'s Black\'s turn). Black must move aside, allowing White\'s King to advance.', fen: '8/8/4k3/8/4K3/8/4P3/8 b - - 0 1' },
@@ -257,6 +286,7 @@ export const lessons: Lesson[] = [
     difficulty: 'intermediate',
     content: [
       { type: 'text', content: 'Rook endgames are by far the most common endgame type, occurring in about 50% of all games that reach an endgame. Mastering them will improve your results dramatically.' },
+      { type: 'illustration', content: 'Rook Endgame Principles', illustrationAlt: '1. Rooks belong BEHIND passed pawns (yours or opponent\'s)\n2. The Lucena Position: the winning technique with Rook + Pawn vs Rook\n3. The Philidor Position: the drawing technique — passive defense on the 6th rank\n4. Active Rook > Extra Pawn' },
       { type: 'text', content: 'The Lucena Position: The most important winning position to know. If you have a Rook and pawn vs. Rook, and your King is on the promotion square with the pawn on the 7th rank, you win using the "bridge building" technique:\n\n1. Push the enemy King away with your Rook\n2. Bring your King out\n3. Block the enemy Rook\'s checks with your own Rook (the "bridge")' },
       { type: 'text', content: 'The Philidor Position: The most important defensive position. If you\'re defending with Rook vs. Rook and pawn, keep your Rook on the 6th rank (to cut off the enemy King), and once the pawn advances to the 6th rank, go to the back rank and check from behind.' },
       { type: 'text', content: 'General Rook endgame principles:\n\n- Rooks belong behind passed pawns (yours or your opponent\'s)\n- Keep your Rook active — a passive Rook loses games\n- Cut off the enemy King from the passed pawn\n- The 7th rank is paradise for a Rook' },
@@ -272,6 +302,7 @@ export const lessons: Lesson[] = [
     difficulty: 'advanced',
     content: [
       { type: 'text', content: 'Positional chess is about long-term advantages rather than immediate tactical gains. While tactics win the battle, strategy wins the war. The great positional players — Capablanca, Karpov, Carlsen — grind down opponents through the accumulation of small advantages.' },
+      { type: 'illustration', content: 'Positional Thinking', illustrationAlt: 'Positional play is about long-term advantages: better piece placement, pawn structure, space, and control of key squares. Unlike tactics (short, forcing), positional play involves gradual improvement — making small moves that accumulate into a winning position.' },
       { type: 'text', content: 'Key positional concepts:\n\n- Weak squares: Squares that can no longer be defended by pawns. These become permanent outposts for enemy pieces, especially Knights.\n\n- Good vs. bad Bishop: A Bishop blocked by its own pawns (on the same color) is "bad." A Bishop with open diagonals and pawns on the opposite color is "good."\n\n- Space advantage: Having pawns further advanced gives your pieces more room to maneuver. But overextension can leave weaknesses behind.\n\n- Piece activity: The most active piece often determines who has the advantage. A Rook on an open file or a Knight on a central outpost can dominate.' },
       { type: 'text', content: 'Prophylaxis (Nimzowitsch\'s concept): Before executing your own plan, ask "What does my opponent want to do?" and prevent it. The best moves often serve a dual purpose — improving your position while restricting your opponent\'s options. This is the hallmark of world-class play.' },
       { type: 'tip', content: 'Don\'t rush! In quiet positions, improve your pieces one at a time. When your pieces are all on their best squares and your opponent has no good moves, only then should you look for the decisive breakthrough.' },
@@ -284,6 +315,7 @@ export const lessons: Lesson[] = [
     difficulty: 'advanced',
     content: [
       { type: 'text', content: 'Calculation is the ability to see ahead — to play out a sequence of moves in your mind and evaluate the resulting position. It\'s the most concrete skill in chess and separates good players from great ones.' },
+      { type: 'illustration', content: 'Calculation Method', illustrationAlt: 'The \'candidate moves\' technique:\n1. Identify 2-3 promising moves\n2. Calculate each one 3-4 moves deep\n3. Evaluate the resulting position\n4. Choose the best line\nAlways check forcing moves first: checks, captures, threats.' },
       { type: 'text', content: 'How to calculate effectively:\n\n1. Identify candidate moves: Don\'t calculate every possible move. Focus on 2-4 most promising moves (checks, captures, threats).\n\n2. Calculate forcing sequences first: Checks, captures, and threats must be dealt with. These narrow the tree of possibilities.\n\n3. Use the "tree method": Analyze one line fully before moving to the next. Don\'t jump between variations or you\'ll get confused.\n\n4. Evaluate the final position: At the end of your calculation, assess who stands better and why.' },
       { type: 'text', content: 'Common calculation pitfalls:\n\n- "Phantom moves": Imagining a piece is on a square where it no longer exists because you calculated it was captured.\n- Stopping too early: Not seeing your opponent\'s defensive resource.\n- Tunnel vision: Getting fixated on one line and missing a better alternative.\n- Assuming: "He wouldn\'t play that!" — always check your opponent\'s best reply.' },
       { type: 'tip', content: 'Practice with puzzle books and online tactics trainers. Start with 1-2 move puzzles and work your way up. Doing 10-15 minutes of puzzles daily will dramatically improve your calculation.' },
@@ -296,6 +328,7 @@ export const lessons: Lesson[] = [
     difficulty: 'advanced',
     content: [
       { type: 'text', content: 'Once you understand the fundamentals, building an opening repertoire helps you get good positions consistently. A repertoire is a set of openings you know well and play regularly.' },
+      { type: 'illustration', content: 'Opening Repertoire', illustrationAlt: 'As White: Choose ONE system (e.g., 1.e4 or 1.d4) and learn the main responses.\nAs Black vs 1.e4: Choose between 1...e5 (classical), 1...c5 (Sicilian), or 1...e6 (French).\nAs Black vs 1.d4: Choose between 1...d5 (classical) or 1...Nf6 (Indian systems).\nLearn ideas, not just moves!' },
       { type: 'text', content: 'Building your repertoire:\n\n1. Choose openings that fit your style:\n   - Aggressive players: 1.e4 as White, Sicilian as Black\n   - Positional players: 1.d4 as White, Queen\'s Gambit Declined as Black\n   - Universal: 1.Nf3 or English as White\n\n2. Start with main lines, not sidelines. Understanding the key plans and typical middlegame positions is more important than memorizing 20 moves of theory.\n\n3. Focus on understanding OVER memorization. If you understand why moves are played, you\'ll find good moves even when your preparation runs out.' },
       { type: 'text', content: 'Recommended openings for improving players:\n\nAs White:\n- Italian Game (1.e4 e5 2.Nf3 Nc6 3.Bc4): Classical development, easy to understand\n- London System (1.d4 2.Bf4): Solid, low-theory system you can play against anything\n\nAs Black:\n- Caro-Kann (1.e4 c6): Solid, sound pawn structure, easy to learn\n- Queen\'s Gambit Declined (1.d4 d5 2.c4 e6): Classical and reliable\n- Nimzo-Indian (1.d4 Nf6 2.c4 e6 3.Nc3 Bb4): Rich strategic play' },
       { type: 'tip', content: 'Don\'t spend too much time on openings below 2000 rating. Focus on tactics, endgames, and middlegame understanding — these will improve your results much more than memorizing 25 moves of the Najdorf Sicilian.' },
@@ -642,5 +675,160 @@ export const famousGames: FamousGame[] = [
       { moveIndex: 40, comment: 'Kf1! — The King begins its incredible journey. Short sees that the endgame requires his King to march all the way across the board.' },
       { moveIndex: 49, comment: 'Kxb6! — The King arrives at b6, having marched from g1. One of the most famous King walks in chess history.' },
     ],
+  },
+];
+
+// =============================================
+// CHESS PUZZLES
+// =============================================
+
+export const chessPuzzles: ChessPuzzle[] = [
+  // --- BEGINNER: Mate in 1 ---
+  {
+    id: 'mate-1-back-rank',
+    title: 'Back Rank Mate',
+    description: 'White to move and checkmate in one.',
+    fen: '6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1',
+    toMove: 'w',
+    solution: ['Ra8#'],
+    difficulty: 'beginner',
+    theme: 'Checkmate in 1',
+    hint: 'The King is trapped behind its own pawns. Use the open file!',
+  },
+  {
+    id: 'mate-1-queen-h7',
+    title: 'Queen Delivers Mate',
+    description: 'White to move and checkmate in one.',
+    fen: 'r1bqk2r/pppp1Qpp/2n2n2/2b1p3/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1',
+    toMove: 'w',
+    solution: ['Qxf7#'],
+    difficulty: 'beginner',
+    theme: 'Checkmate in 1',
+    hint: 'The Scholar\'s Mate pattern — the f7 square is the weakest point.',
+  },
+  {
+    id: 'mate-1-smothered',
+    title: 'Smothered Mate',
+    description: 'White to move and deliver a smothered checkmate.',
+    fen: '6rk/6pp/8/6N1/8/8/8/7K w - - 0 1',
+    toMove: 'w',
+    solution: ['Nf7#'],
+    difficulty: 'beginner',
+    theme: 'Checkmate in 1',
+    hint: 'The Knight can deliver check where the King has no escape squares.',
+  },
+  {
+    id: 'mate-1-double-bishop',
+    title: 'Bishop Mate',
+    description: 'White to move and checkmate in one.',
+    fen: '5rk1/5p1p/8/8/1B6/8/8/3K2B1 w - - 0 1',
+    toMove: 'w',
+    solution: ['Bd5'],
+    difficulty: 'beginner',
+    theme: 'Checkmate in 1',
+    hint: 'Can you line up both Bishops on the same diagonal toward the King?',
+  },
+
+  // --- INTERMEDIATE: Tactics ---
+  {
+    id: 'fork-knight',
+    title: 'Royal Knight Fork',
+    description: 'White to move. Win material with a Knight fork.',
+    fen: 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 1',
+    toMove: 'w',
+    solution: ['Ng5'],
+    difficulty: 'intermediate',
+    theme: 'Fork',
+    hint: 'Can the Knight attack two vulnerable squares at once? Look at f7.',
+  },
+  {
+    id: 'pin-bishop',
+    title: 'Winning Pin',
+    description: 'White to move. Use a pin to win material.',
+    fen: 'r2qkb1r/pppb1ppp/2n1pn2/3p4/3P1B2/2N1PN2/PPP2PPP/R2QKB1R w KQkq - 0 1',
+    toMove: 'w',
+    solution: ['Bb5'],
+    difficulty: 'intermediate',
+    theme: 'Pin',
+    hint: 'Pin a piece to the King! Which piece is shielding the Black King?',
+  },
+  {
+    id: 'skewer-rook',
+    title: 'The Rook Skewer',
+    description: 'White to move. Win the Queen with a skewer.',
+    fen: '8/8/8/8/1k2q3/8/8/4R2K w - - 0 1',
+    toMove: 'w',
+    solution: ['Rb1+'],
+    difficulty: 'intermediate',
+    theme: 'Skewer',
+    hint: 'Attack the King so that when it moves, you capture the piece behind it.',
+  },
+  {
+    id: 'discovered-attack',
+    title: 'Discovered Attack',
+    description: 'White to move. Win material with a discovered attack.',
+    fen: 'r1bqkbnr/pppppppp/2n5/1B6/4P3/8/PPPP1PPP/RNBQK1NR w KQkq - 0 1',
+    toMove: 'w',
+    solution: ['Bxc6'],
+    difficulty: 'intermediate',
+    theme: 'Discovered Attack',
+    hint: 'Capture the Knight — what does the Queen behind it do?',
+  },
+  {
+    id: 'deflection',
+    title: 'Deflection Tactic',
+    description: 'White to move. Deflect the defender and win.',
+    fen: '3r2k1/5ppp/8/8/8/8/1Q3PPP/6K1 w - - 0 1',
+    toMove: 'w',
+    solution: ['Qb8'],
+    difficulty: 'intermediate',
+    theme: 'Deflection',
+    hint: 'Can you force a trade of Rooks, or deflect the Rook from defending?',
+  },
+
+  // --- ADVANCED: Mate in 2+ ---
+  {
+    id: 'mate-2-sacrifice',
+    title: 'Queen Sacrifice Mate',
+    description: 'White to move and checkmate in two moves.',
+    fen: 'r1b1k2r/ppppqppp/2n2n2/2b1p2Q/2B1P3/8/PPPP1PPP/RNB1K1NR w KQkq - 0 1',
+    toMove: 'w',
+    solution: ['Qxh7+', 'Nxh7', 'doesnt matter'],
+    difficulty: 'advanced',
+    theme: 'Checkmate in 2',
+    hint: 'Sometimes the most forcing move is a sacrifice on h7.',
+  },
+  {
+    id: 'mate-2-rook-lift',
+    title: 'Rook Lift Mate',
+    description: 'White to move and checkmate in two moves.',
+    fen: '6k1/5ppp/8/8/8/4R3/5PPP/6K1 w - - 0 1',
+    toMove: 'w',
+    solution: ['Re8+', 'Kh7 doesnt matter'],
+    difficulty: 'advanced',
+    theme: 'Checkmate in 2',
+    hint: 'Lift the Rook to the 8th rank first.',
+  },
+  {
+    id: 'mate-3-anastasia',
+    title: 'Anastasia\'s Mate',
+    description: 'White to move. Find the forced checkmate pattern.',
+    fen: '4r1k1/5pNp/8/8/8/8/4R3/6K1 w - - 0 1',
+    toMove: 'w',
+    solution: ['Re8+', 'Rxe8', 'Nf5 doesnt matter'],
+    difficulty: 'advanced',
+    theme: 'Checkmate Pattern',
+    hint: 'Sacrifice the Rook to deflect, then the Knight delivers.',
+  },
+  {
+    id: 'tactic-zwischenzug',
+    title: 'Zwischenzug (In-Between Move)',
+    description: 'White to move. Find the surprising in-between move.',
+    fen: 'r1bq1rk1/ppp2ppp/2n1pn2/3pN3/1bPP4/2N5/PP2PPPP/R1BQKB1R w KQ - 0 1',
+    toMove: 'w',
+    solution: ['Nxc6'],
+    difficulty: 'advanced',
+    theme: 'Zwischenzug',
+    hint: 'Instead of recapturing immediately, make a stronger move first.',
   },
 ];
