@@ -133,7 +133,8 @@ function ttHash(fen: string): number {
 
 // Quiescence search: resolve captures so we don't misevaluate tactical positions
 function quiescence(game: Chess, alpha: number, beta: number, maxQDepth: number): number {
-  const standPat = evaluateBoard(game);
+  const rawEval = evaluateBoard(game);
+  const standPat = game.turn() === 'w' ? rawEval : -rawEval; // negamax: score from side-to-move's perspective
   if (maxQDepth <= 0) return standPat;
   if (standPat >= beta) return beta;
   if (standPat > alpha) alpha = standPat;
@@ -166,9 +167,12 @@ function minimax(
 ): number {
   if (depth === 0 || game.isGameOver()) {
     if (depth === 0 && !game.isGameOver()) {
-      // Use quiescence search at leaf nodes
-      const qScore = quiescence(game, -99999, 99999, 4);
-      return qScore;
+      // Use quiescence search with narrowed alpha-beta window
+      if (isMaximizing) {
+        return quiescence(game, alpha, beta, 4);
+      } else {
+        return -quiescence(game, -beta, -alpha, 4);
+      }
     }
     return evaluateBoard(game);
   }
@@ -235,18 +239,42 @@ export function getBestMove(game: Chess, depth: number = 3): ScoredMove | null {
   const moves = game.moves({ verbose: true });
   if (moves.length === 0) return null;
 
+  // Sort root moves for better alpha-beta pruning
+  moves.sort((a, b) => {
+    let scoreA = 0, scoreB = 0;
+    if (a.captured) scoreA += (PIECE_VALUES[a.captured] || 0) * 10 - (PIECE_VALUES[a.piece] || 0);
+    if (b.captured) scoreB += (PIECE_VALUES[b.captured] || 0) * 10 - (PIECE_VALUES[b.piece] || 0);
+    if (a.promotion) scoreA += 8000;
+    if (b.promotion) scoreB += 8000;
+    const center = ['d4','d5','e4','e5'];
+    if (center.includes(a.to)) scoreA += 30;
+    if (center.includes(b.to)) scoreB += 30;
+    return scoreB - scoreA;
+  });
+
   const isWhite = game.turn() === 'w';
   let bestMove: Move | null = null;
   let bestScore = isWhite ? -Infinity : Infinity;
+  let alpha = -Infinity;
+  let beta = Infinity;
 
   for (const move of moves) {
     game.move(move);
-    const score = minimax(game, depth - 1, -Infinity, Infinity, !isWhite);
+    const score = minimax(game, depth - 1, alpha, beta, !isWhite);
     game.undo();
 
-    if (isWhite ? score > bestScore : score < bestScore) {
-      bestScore = score;
-      bestMove = move;
+    if (isWhite) {
+      if (score > bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+      if (score > alpha) alpha = score;
+    } else {
+      if (score < bestScore) {
+        bestScore = score;
+        bestMove = move;
+      }
+      if (score < beta) beta = score;
     }
   }
 
