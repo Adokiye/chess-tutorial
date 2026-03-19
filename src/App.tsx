@@ -60,6 +60,7 @@ function App() {
   const [analysisData, setAnalysisData] = useState<MoveAnalysis[]>([]);
   const [analysisIndex, setAnalysisIndex] = useState(0);
   const [isThinking, setIsThinking] = useState(false);
+  const aiFailed = useRef(false);
   const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null);
   const [gameResult, setGameResult] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -280,38 +281,47 @@ function App() {
     const depth = depthMap[difficulty];
 
     computeMove(game.fen(), depth).then((result) => {
-      if (result) {
-        const newGame = new Chess(game.fen());
-        const m = newGame.move(result.move);
-        if (m) {
-          setLastMove({ from: m.from as Square, to: m.to as Square });
-          setMoveHistory(prev => [...prev, m.san]);
-          setGame(newGame);
-          playSound(m.san, !!m.captured, m.flags.includes('k') || m.flags.includes('q'));
-
-          // Execute queued pre-move
-          setPremove(prev => {
-            if (prev && !newGame.isGameOver()) {
-              setTimeout(() => {
-                try {
-                  const preGame = new Chess(newGame.fen());
-                  const move = preGame.move({ from: prev.from, to: prev.to, promotion: prev.promotion || undefined });
-                  if (move) {
-                    setLastMove({ from: prev.from, to: prev.to });
-                    setMoveHistory(h => [...h, move.san]);
-                    setGame(preGame);
-                    playSound(move.san, !!move.captured, move.flags.includes('k') || move.flags.includes('q'));
-                  }
-                } catch {
-                  // Pre-move invalid — discard
-                }
-              }, 50);
-            }
-            return null;
-          });
-        }
+      if (!result) {
+        console.warn('Engine returned no move for position:', game.fen());
+        aiFailed.current = true;
+        setIsThinking(false);
+        return;
       }
+      const newGame = new Chess(game.fen());
+      const m = newGame.move(result.move);
+      if (!m) {
+        console.warn('Engine move was invalid:', result.move);
+        aiFailed.current = true;
+        setIsThinking(false);
+        return;
+      }
+      aiFailed.current = false;
+      setLastMove({ from: m.from as Square, to: m.to as Square });
+      setMoveHistory(prev => [...prev, m.san]);
+      setGame(newGame);
       setIsThinking(false);
+      playSound(m.san, !!m.captured, m.flags.includes('k') || m.flags.includes('q'));
+
+      // Execute queued pre-move
+      setPremove(prev => {
+        if (prev && !newGame.isGameOver()) {
+          setTimeout(() => {
+            try {
+              const preGame = new Chess(newGame.fen());
+              const move = preGame.move({ from: prev.from, to: prev.to, promotion: prev.promotion || undefined });
+              if (move) {
+                setLastMove({ from: prev.from, to: prev.to });
+                setMoveHistory(h => [...h, move.san]);
+                setGame(preGame);
+                playSound(move.san, !!move.captured, move.flags.includes('k') || move.flags.includes('q'));
+              }
+            } catch {
+              // Pre-move invalid — discard
+            }
+          }, 50);
+        }
+        return null;
+      });
     });
   }, [game, difficulty, playSound, computeMove]);
 
@@ -319,7 +329,7 @@ function App() {
   useEffect(() => {
     if (phase !== 'playing') return;
     if (!game.isGameOver()) {
-      if (game.turn() !== playerColor && !isThinking) {
+      if (game.turn() !== playerColor && !isThinking && !aiFailed.current) {
         makeAiMove();
       }
       return;
