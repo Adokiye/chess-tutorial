@@ -1929,6 +1929,12 @@
   line-height: 1.6;
 }
 
+.puzzle-action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
 /* Mini board (for diagrams) */
 .mini-board {
   display: grid;
