@@ -1468,6 +1468,35 @@
   margin-bottom: 1.2rem;
 }
 
+.learn-summary-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.2rem;
+}
+
+.learn-summary-card {
+  background: #222326;
+  border: 1px solid #2e2f33;
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.learn-summary-card span {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #71717a;
+}
+
+.learn-summary-card strong {
+  font-size: 1.3rem;
+  color: #fff;
+}
+
 .filter-pill {
   padding: 0.35rem 0.8rem;
   border-radius: 20px;
@@ -1806,6 +1835,14 @@
   font-weight: 500;
 }
 
+.puzzle-progress {
+  font-size: 0.8rem;
+  color: #7c9a5e;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 .puzzle-board {
   width: 400px;
   height: 400px;
@@ -1855,6 +1892,28 @@
   flex-direction: column;
   gap: 0.8rem;
   min-width: 200px;
+}
+
+.puzzle-status-card {
+  background: #222326;
+  border: 1px solid #2e2f33;
+  border-radius: 10px;
+  padding: 1rem;
+}
+
+.puzzle-status-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #7c9a5e;
+  margin-bottom: 0.35rem;
+}
+
+.puzzle-status-card p {
+  font-size: 0.85rem;
+  color: #c4c4cc;
+  line-height: 1.5;
+  margin: 0;
 }
 
 .puzzle-hint-box {
