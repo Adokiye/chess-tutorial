@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Chess, type Square } from 'chess.js';
 import {
   lessons,
@@ -17,6 +17,31 @@ type PuzzleFilter = 'all' | 'beginner' | 'intermediate' | 'advanced';
 
 interface LearnProps {
   onBack: () => void;
+}
+
+function isValidGame(gameData: FamousGame): boolean {
+  try {
+    const game = new Chess();
+    game.loadPgn(gameData.pgn);
+    const totalMoves = game.history().length;
+    return gameData.keyMoments.every(
+      ({ moveIndex }) => moveIndex >= 0 && moveIndex < totalMoves
+    );
+  } catch {
+    return false;
+  }
+}
+
+function isValidPuzzle(puzzle: ChessPuzzle): boolean {
+  try {
+    const game = new Chess(puzzle.fen);
+    for (const san of puzzle.solution) {
+      game.move(san);
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // Parse FEN into a board array without chess.js validation
@@ -279,10 +304,14 @@ function PuzzlePlayer({ puzzle, onBack }: { puzzle: ChessPuzzle; onBack: () => v
   const [status, setStatus] = useState<'playing' | 'correct' | 'wrong'>('playing');
   const [showHint, setShowHint] = useState(false);
   const [lastMove, setLastMove] = useState<{ from: Square; to: Square } | null>(null);
+  const [message, setMessage] = useState('Find the best move for the side to move.');
 
   const validMoves = selectedSquare
     ? game.moves({ square: selectedSquare, verbose: true }).map(m => m.to as Square)
     : [];
+
+  const totalPlayerMoves = Math.ceil(puzzle.solution.length / 2);
+  const completedPlayerMoves = Math.min(Math.ceil(solutionIndex / 2), totalPlayerMoves);
 
   const handleClick = useCallback((square: Square) => {
     if (status !== 'playing') return;
@@ -303,37 +332,39 @@ function PuzzlePlayer({ puzzle, onBack }: { puzzle: ChessPuzzle; onBack: () => v
         const move = newGame.move({ from: selectedSquare, to: square, promotion: 'q' });
         if (move) {
           setLastMove({ from: selectedSquare, to: square });
-          setGame(newGame);
 
           // Check if this matches the expected solution move
           const expectedSan = puzzle.solution[solutionIndex];
           if (move.san === expectedSan) {
-            const nextIdx = solutionIndex + 1;
+            let nextIdx = solutionIndex + 1;
+            const autoGame = new Chess(newGame.fen());
+            let autoLastMove = { from: selectedSquare, to: square };
+
+            while (nextIdx < puzzle.solution.length && autoGame.turn() !== puzzle.toMove) {
+              const response = autoGame.move(puzzle.solution[nextIdx]);
+              autoLastMove = {
+                from: response.from as Square,
+                to: response.to as Square,
+              };
+              nextIdx += 1;
+            }
+
+            setGame(autoGame);
+            setLastMove(autoLastMove);
+            setSolutionIndex(nextIdx);
+            setMessage(
+              nextIdx >= puzzle.solution.length
+                ? 'Puzzle solved.'
+                : 'Correct. Keep calculating.'
+            );
+
             if (nextIdx >= puzzle.solution.length) {
               setStatus('correct');
-            } else {
-              // Play the opponent's response
-              setSolutionIndex(nextIdx);
-              setTimeout(() => {
-                const respGame = new Chess(newGame.fen());
-                try {
-                  const resp = respGame.move(puzzle.solution[nextIdx]);
-                  if (resp) {
-                    setLastMove({ from: resp.from as Square, to: resp.to as Square });
-                    setGame(respGame);
-                    setSolutionIndex(nextIdx + 1);
-                    // Check if puzzle is done after response
-                    if (nextIdx + 1 >= puzzle.solution.length) {
-                      setStatus('correct');
-                    }
-                  }
-                } catch {
-                  setStatus('correct');
-                }
-              }, 400);
             }
           } else {
+            setGame(newGame);
             setStatus('wrong');
+            setMessage(`Not quite. The expected move was ${expectedSan}.`);
           }
         }
       } catch {
@@ -350,6 +381,7 @@ function PuzzlePlayer({ puzzle, onBack }: { puzzle: ChessPuzzle; onBack: () => v
     setStatus('playing');
     setLastMove(null);
     setShowHint(false);
+    setMessage('Find the best move for the side to move.');
   };
 
   const flipBoard = puzzle.toMove === 'b';
@@ -369,6 +401,9 @@ function PuzzlePlayer({ puzzle, onBack }: { puzzle: ChessPuzzle; onBack: () => v
         <div className="puzzle-board-section">
           <div className="puzzle-to-move">
             {puzzle.toMove === 'w' ? 'White' : 'Black'} to move — {puzzle.theme}
+          </div>
+          <div className="puzzle-progress">
+            Step {Math.min(completedPlayerMoves + 1, totalPlayerMoves)} of {totalPlayerMoves}
           </div>
 
           <div className="board puzzle-board">
@@ -404,17 +439,21 @@ function PuzzlePlayer({ puzzle, onBack }: { puzzle: ChessPuzzle; onBack: () => v
 
           {status === 'correct' && (
             <div className="puzzle-feedback correct">
-              Correct! Well done.
+              Correct! {message}
             </div>
           )}
           {status === 'wrong' && (
             <div className="puzzle-feedback wrong">
-              Not quite. The answer was <strong>{puzzle.solution[solutionIndex]}</strong>.
+              {message}
             </div>
           )}
         </div>
 
         <div className="puzzle-info-panel">
+          <div className="puzzle-status-card">
+            <div className="puzzle-status-label">Progress</div>
+            <p>{completedPlayerMoves} of {totalPlayerMoves} player moves found.</p>
+          </div>
           {!showHint && status === 'playing' && (
             <button className="btn-small btn-hint" onClick={() => setShowHint(true)}>Show Hint</button>
           )}
@@ -445,6 +484,15 @@ export default function Learn({ onBack }: LearnProps) {
   const [lessonFilter, setLessonFilter] = useState<string>('all');
   const [puzzleFilter, setPuzzleFilter] = useState<PuzzleFilter>('all');
 
+  const validGames = useMemo(
+    () => famousGames.filter(isValidGame),
+    []
+  );
+  const validPuzzles = useMemo(
+    () => chessPuzzles.filter(isValidPuzzle),
+    []
+  );
+
   // Get unique lesson categories
   const categories = ['all', ...Array.from(new Set(lessons.map(l => l.category)))];
 
@@ -457,8 +505,15 @@ export default function Learn({ onBack }: LearnProps) {
     : chessBooks.filter(b => b.level === bookFilter);
 
   const filteredPuzzles = puzzleFilter === 'all'
-    ? chessPuzzles
-    : chessPuzzles.filter(p => p.difficulty === puzzleFilter);
+    ? validPuzzles
+    : validPuzzles.filter(p => p.difficulty === puzzleFilter);
+
+  const puzzleCounts = useMemo(() => ({
+    total: validPuzzles.length,
+    beginner: validPuzzles.filter(p => p.difficulty === 'beginner').length,
+    intermediate: validPuzzles.filter(p => p.difficulty === 'intermediate').length,
+    advanced: validPuzzles.filter(p => p.difficulty === 'advanced').length,
+  }), [validPuzzles]);
 
   // If viewing a puzzle
   if (selectedPuzzle) {
@@ -556,6 +611,24 @@ export default function Learn({ onBack }: LearnProps) {
           <p className="games-intro">
             Solve tactical puzzles to sharpen your pattern recognition. Find the best move! Click a puzzle to start solving.
           </p>
+          <div className="learn-summary-row">
+            <div className="learn-summary-card">
+              <span>Total puzzles</span>
+              <strong>{puzzleCounts.total}</strong>
+            </div>
+            <div className="learn-summary-card">
+              <span>Beginner</span>
+              <strong>{puzzleCounts.beginner}</strong>
+            </div>
+            <div className="learn-summary-card">
+              <span>Intermediate</span>
+              <strong>{puzzleCounts.intermediate}</strong>
+            </div>
+            <div className="learn-summary-card">
+              <span>Advanced</span>
+              <strong>{puzzleCounts.advanced}</strong>
+            </div>
+          </div>
 
           <div className="learn-filters">
             {(['all', 'beginner', 'intermediate', 'advanced'] as const).map(level => (
@@ -650,7 +723,7 @@ export default function Learn({ onBack }: LearnProps) {
           </p>
 
           <div className="games-grid">
-            {famousGames.map(game => (
+            {validGames.map(game => (
               <div
                 key={game.id}
                 className="game-card"
