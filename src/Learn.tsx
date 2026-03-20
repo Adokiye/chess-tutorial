@@ -19,6 +19,12 @@ interface LearnProps {
   onBack: () => void;
 }
 
+interface PuzzlePlayerProps {
+  puzzle: ChessPuzzle;
+  onBack: () => void;
+  onNextPuzzle: (() => void) | null;
+}
+
 function isValidGame(gameData: FamousGame): boolean {
   try {
     const game = new Chess();
@@ -297,7 +303,7 @@ function LessonViewer({ lesson, onBack }: { lesson: Lesson; onBack: () => void }
   );
 }
 
-function PuzzlePlayer({ puzzle, onBack }: { puzzle: ChessPuzzle; onBack: () => void }) {
+function PuzzlePlayer({ puzzle, onBack, onNextPuzzle }: PuzzlePlayerProps) {
   const [game, setGame] = useState(() => new Chess(puzzle.fen));
   const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);
   const [solutionIndex, setSolutionIndex] = useState(0);
@@ -465,9 +471,16 @@ function PuzzlePlayer({ puzzle, onBack }: { puzzle: ChessPuzzle; onBack: () => v
           )}
 
           {status !== 'playing' && (
-            <button className="btn-primary" onClick={reset} style={{ marginTop: '0.5rem' }}>
-              Try Again
-            </button>
+            <div className="puzzle-action-buttons">
+              <button className="btn-primary" onClick={reset}>
+                Try Again
+              </button>
+              {status === 'correct' && onNextPuzzle && (
+                <button className="btn-secondary" onClick={onNextPuzzle}>
+                  Next Puzzle
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
@@ -508,6 +521,11 @@ export default function Learn({ onBack }: LearnProps) {
     ? validPuzzles
     : validPuzzles.filter(p => p.difficulty === puzzleFilter);
 
+  const selectedPuzzleIndex = selectedPuzzle
+    ? filteredPuzzles.findIndex(puzzle => puzzle.id === selectedPuzzle.id)
+    : -1;
+  const hasNextPuzzle = selectedPuzzleIndex >= 0 && selectedPuzzleIndex < filteredPuzzles.length - 1;
+
   const puzzleCounts = useMemo(() => ({
     total: validPuzzles.length,
     beginner: validPuzzles.filter(p => p.difficulty === 'beginner').length,
@@ -519,7 +537,12 @@ export default function Learn({ onBack }: LearnProps) {
   if (selectedPuzzle) {
     return (
       <div className="learn-screen">
-        <PuzzlePlayer puzzle={selectedPuzzle} onBack={() => setSelectedPuzzle(null)} />
+        <PuzzlePlayer
+          key={selectedPuzzle.id}
+          puzzle={selectedPuzzle}
+          onBack={() => setSelectedPuzzle(null)}
+          onNextPuzzle={hasNextPuzzle ? () => setSelectedPuzzle(filteredPuzzles[selectedPuzzleIndex + 1]) : null}
+        />
       </div>
     );
   }
