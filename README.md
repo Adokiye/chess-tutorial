@@ -1,73 +1,81 @@
-# React + TypeScript + Vite
+# Chess Tutor
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+An interactive chess learning and practice web app built with **React + TypeScript + Vite**.
+Play against an in-browser engine, learn through structured lessons, study famous games, and solve tactical puzzles—all in one place.
 
-Currently, two official plugins are available:
+## ✨ Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Play vs AI** with multiple difficulty levels (`beginner` → `master`).
+- **Hint system** with move suggestions and analysis support.
+- **Post-game analysis** to review moves and key decisions.
+- **Learning mode** with:
+  - Curated chess lessons
+  - Recommended chess books
+  - Famous game replays
+  - Interactive puzzles
+- **Game persistence**: save/load games and track your progress.
+- **Player stats & Elo-style updates** after game results.
+- **Optional clocks** for timed games.
+- **Sound effects** for move, capture, check, castling, and game-over events.
 
-## React Compiler
+## 🧱 Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Frontend:** React 19, TypeScript
+- **Build Tool:** Vite
+- **Chess Logic:** `chess.js`
+- **Linting:** ESLint
 
-## Expanding the ESLint configuration
+## 🚀 Getting Started
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+### 1) Install dependencies
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+### 2) Start development server
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+Then open the local URL shown in your terminal (usually `http://localhost:5173`).
+
+## 📦 Available Scripts
+
+- `npm run dev` — Start local development server
+- `npm run build` — Type-check and build production bundle
+- `npm run preview` — Preview production build locally
+- `npm run lint` — Run ESLint checks
+
+## 🎮 How to Use
+
+1. Launch the app and choose your side, difficulty, and optional time control.
+2. Play moves directly on the board (promotion and special rules are supported).
+3. Toggle hints when needed.
+4. Use analysis/game-over views to review performance.
+5. Visit **Learn** mode for lessons, puzzles, and famous games.
+
+## 📁 Project Structure
+
+```text
+src/
+  App.tsx              # Main gameplay UI and state management
+  Learn.tsx            # Learning hub: lessons, books, games, puzzles
+  engine.ts            # Move selection, hints, and analysis logic
+  engineWorker.ts      # Worker-side engine computations
+  useEngineWorker.ts   # Hook interface for worker communication
+  tutorialData.ts      # Lessons, books, famous games, puzzle content
+  storage.ts           # Save/load game and player stats utilities
+  sounds.ts            # Audio playback helpers
+```
+
+## 📝 Notes
+
+- All gameplay runs locally in the browser.
+- No backend is required for core usage.
+- Saved progress is stored client-side.
+
+---
+
+If you enjoy this project, consider extending it with opening trainers, custom puzzle imports, or multiplayer support.
